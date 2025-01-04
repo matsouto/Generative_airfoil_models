@@ -1,7 +1,7 @@
 import numpy as np
-import pandas as pd
-from typing import Union
 import aerosandbox as asb
+from typing import Union
+from pathlib import Path
 from aerosandbox.geometry.airfoil.airfoil_families import (
     get_NACA_coordinates,
     get_UIUC_coordinates,
@@ -13,7 +13,7 @@ class Airfoil:
     def __init__(
         self,
         name: str = "Untitled",
-        coordinates: Union[str, None] = None,
+        coordinates: str = None,
     ):
         """
         Initializes an Airfoil object with a given name and optional coordinates path.
@@ -129,75 +129,120 @@ class Airfoil:
             else:
                 return fig
 
-    # def generate_polars_xfoil(
+    def write_dat(
+        self,
+        filepath: Union[Path, str] = None,
+        include_name: bool = True,
+    ) -> str:
+        """
+        Writes a .dat file corresponding to this airfoil to a filepath.
 
-    #     airfoil_path: str,
-    #     name: str,
-    #     alpha_i=0,
-    #     alpha_f=10,
-    #     alpha_step=0.25,
-    #     Re=1000000,
-    #     n_iter=100,
-    #     polar_path="src/xfoil_runner/data/genome_polar.txt",
-    #     min_points_to_converged=20,
-    # ):
-    #     """Roda simulação pelo XFOIL"""
-    #     run_xfoil(
-    #         airfoil_path,
-    #         name,
-    #         alpha_i,
-    #         alpha_f,
-    #         alpha_step,
-    #         Re,
-    #         n_iter,
-    #         polar_path=polar_path,
-    #     )
-    #     self.sim = True
+        Args:
+            filepath: filepath (including the filename and .dat extension) [string]
+                If None, this function returns the .dat file as a string.
 
-    #     with open(polar_path) as file:
-    #         """Ref: https://github.com/ashokolarov/Genetic-airfoil"""
-    #         polar_data = np.array(
-    #             [
-    #                 np.array([float(x) for x in line.split()])
-    #                 for line in file.readlines()[12:]
-    #             ]
-    #         )
+            include_name: Should the name be included in the .dat file? (In a standard *.dat file, it usually is.)
 
-    #         """Descarta os perfis que não convergirem"""
-    #         try:
-    #             alpha = polar_data[:, 0]
-    #             if len(alpha) < min_points_to_converged:
-    #                 self.converged = False
-    #             else:
-    #                 Cl = polar_data[:, 1]
-    #                 Cd = polar_data[:, 2]
-    #                 self.converged = (
-    #                     True  # Estado que determina se o perfil convergiu na análise
-    #                 )
+        Returns: None
 
-    #                 Cl_integration = np.trapz(Cl, alpha)
-    #                 Cd_integration = np.trapz(Cd, alpha)
-    #                 Cl_max = max(Cl)
-    #                 ClCd = Cl / Cd
-    #                 ClCd_integration = np.trapz(ClCd, alpha)
-    #                 Cl3Cd2 = (Cl) ** 3 / (Cd) ** 2
-    #                 ClCd_max = max(ClCd)
-    #                 Cl3Cd2_max = max(Cl3Cd2)
+        """
+        contents = []
 
-    #                 stall_angle = alpha[np.argmax(Cl)]
+        if include_name:
+            contents += [self.name]
 
-    #                 self.alpha = alpha
-    #                 self.Cl = Cl
-    #                 self.Cd = Cd
-    #                 self.Cl_integration = Cl_integration
-    #                 self.Cd_integration = Cd_integration
-    #                 self.ClCd_integration = ClCd_integration
-    #                 self.Cl_max = Cl_max
-    #                 self.ClCd_max = ClCd_max
-    #                 self.Cl3Cd2_max = Cl3Cd2_max
-    #                 self.stall_angle = stall_angle
-    #         except:
-    #             self.converged = False
+        contents += ["%f %f" % tuple(coordinate) for coordinate in self.coordinates]
+
+        string = "\n".join(contents)
+
+        if filepath is not None:
+            with open(filepath, "w+") as f:
+                f.write(string)
+
+        return string
+
+    def generate_polars_xfoil(
+        self,
+        alpha_i: float = 0.0,
+        alpha_f: float = 10.0,
+        alpha_step: float = 0.25,
+        Re: int = 1000000,
+        n_iter: int = 100,
+        min_points_to_converged: int = 20,
+        working_directory: str = None,
+    ) -> dict:
+        """
+        Generates polar data for the airfoil using XFOIL over a specified range of angles of attack.
+
+        This method utilizes the `run_xfoil` function to perform simulations and retrieve polar data,
+        which includes lift, drag, and moment coefficients for the airfoil at various angles of attack.
+
+        Args:
+            alpha_i (float): Initial angle of attack in degrees. Defaults to 0.0.
+            alpha_f (float): Final angle of attack in degrees. Defaults to 10.0.
+            alpha_step (float): Step size for the angle of attack in degrees. Defaults to 0.25.
+            Re (int): Reynolds number for the simulation. Defaults to 1000000.
+            n_iter (int): Maximum number of iterations for convergence. Defaults to 100.
+            min_points_to_converged (int): Minimum number of points required for convergence. Defaults to 20.
+            working_directory (str, optional): Directory to use for temporary files. Defaults to None.
+
+        Returns:
+            dict: Dictionary containing the polar data from the XFOIL simulation.
+        """
+
+        from airfoil_toolkit.xfoil import run_xfoil
+
+        # Run XFoil to get polars
+        self.polars = run_xfoil(
+            self, alpha_i, alpha_f, alpha_step, Re, n_iter, working_directory
+        )
+
+        return self.polars
+
+        # with open(polar_path) as file:
+        #     """Ref: https://github.com/ashokolarov/Genetic-airfoil"""
+        #     polar_data = np.array(
+        #         [
+        #             np.array([float(x) for x in line.split()])
+        #             for line in file.readlines()[12:]
+        #         ]
+        #     )
+
+        # """Descarta os perfis que não convergirem"""
+        # try:
+        #     alpha = polar_data[:, 0]
+        #     if len(alpha) < min_points_to_converged:
+        #         self.converged = False
+        #     else:
+        #         Cl = polar_data[:, 1]
+        #         Cd = polar_data[:, 2]
+        #         self.converged = (
+        #             True  # Estado que determina se o perfil convergiu na análise
+        #         )
+
+        #         Cl_integration = np.trapz(Cl, alpha)
+        #         Cd_integration = np.trapz(Cd, alpha)
+        #         Cl_max = max(Cl)
+        #         ClCd = Cl / Cd
+        #         ClCd_integration = np.trapz(ClCd, alpha)
+        #         Cl3Cd2 = (Cl) ** 3 / (Cd) ** 2
+        #         ClCd_max = max(ClCd)
+        #         Cl3Cd2_max = max(Cl3Cd2)
+
+        #         stall_angle = alpha[np.argmax(Cl)]
+
+        #         self.alpha = alpha
+        #         self.Cl = Cl
+        #         self.Cd = Cd
+        #         self.Cl_integration = Cl_integration
+        #         self.Cd_integration = Cd_integration
+        #         self.ClCd_integration = ClCd_integration
+        #         self.Cl_max = Cl_max
+        #         self.ClCd_max = ClCd_max
+        #         self.Cl3Cd2_max = Cl3Cd2_max
+        #         self.stall_angle = stall_angle
+        # except:
+        #     self.converged = False
 
 
 if __name__ == "__main__":
