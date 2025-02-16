@@ -1,7 +1,8 @@
 import numpy as np
 import aerosandbox as asb
-from typing import Union
+from typing import Union, List
 from pathlib import Path
+from airfoil_toolkit.aux import eng_string
 from aerosandbox.geometry.airfoil.airfoil_families import (
     get_NACA_coordinates,
     get_UIUC_coordinates,
@@ -166,7 +167,7 @@ class Airfoil:
         alpha_i: float = 0.0,
         alpha_f: float = 10.0,
         alpha_step: float = 0.25,
-        Re: int = 1000000,
+        Res: np.ndarray = np.geomspace(1e4, 1e6, 12),
         n_iter: int = 100,
         min_points_to_converged: int = 20,
         working_directory: str = None,
@@ -191,22 +192,21 @@ class Airfoil:
         """
 
         from airfoil_toolkit.xfoil import run_xfoil
+        from tqdm import tqdm
 
-        # Run XFoil to get polars
-        self.polars = run_xfoil(
-            self, alpha_i, alpha_f, alpha_step, Re, n_iter, working_directory
-        )
+        # Get a list of dicts, where each dict is the result of an XFoil run at a particular Re.
+        run_datas = [
+            run_xfoil(self, alpha_i, alpha_f, alpha_step, Re, n_iter, working_directory)
+            for Re in tqdm(
+                Res,
+                desc=f"Running XFoil to generate polars for Airfoil '{self.name}':",
+            )
+        ]
+
+        self.polars = run_datas
+        self.Res = Res
 
         return self.polars
-
-        # with open(polar_path) as file:
-        #     """Ref: https://github.com/ashokolarov/Genetic-airfoil"""
-        #     polar_data = np.array(
-        #         [
-        #             np.array([float(x) for x in line.split()])
-        #             for line in file.readlines()[12:]
-        #         ]
-        #     )
 
         # """Descarta os perfis que não convergirem"""
         # try:
@@ -220,29 +220,80 @@ class Airfoil:
         #             True  # Estado que determina se o perfil convergiu na análise
         #         )
 
-        #         Cl_integration = np.trapz(Cl, alpha)
-        #         Cd_integration = np.trapz(Cd, alpha)
-        #         Cl_max = max(Cl)
-        #         ClCd = Cl / Cd
-        #         ClCd_integration = np.trapz(ClCd, alpha)
-        #         Cl3Cd2 = (Cl) ** 3 / (Cd) ** 2
-        #         ClCd_max = max(ClCd)
-        #         Cl3Cd2_max = max(Cl3Cd2)
+    def plot_polars(
+        self,
+    ) -> None:
+        import matplotlib.pyplot as plt
 
-        #         stall_angle = alpha[np.argmax(Cl)]
+        fig, ax = plt.subplots(2, 2, figsize=(9, 8))
+        for data in self.polars:
+            ax[0, 0].plot(data["alpha"], data["CL"])
+            ax[0, 0].set(
+                xlabel=r"Angle of Attack $\alpha$ [deg]",
+                ylabel="Lift Coefficient $C_L$",
+            )
 
-        #         self.alpha = alpha
-        #         self.Cl = Cl
-        #         self.Cd = Cd
-        #         self.Cl_integration = Cl_integration
-        #         self.Cd_integration = Cd_integration
-        #         self.ClCd_integration = ClCd_integration
-        #         self.Cl_max = Cl_max
-        #         self.ClCd_max = ClCd_max
-        #         self.Cl3Cd2_max = Cl3Cd2_max
-        #         self.stall_angle = stall_angle
-        # except:
-        #     self.converged = False
+            ax[0, 1].plot(data["alpha"], data["CD"])
+            ax[0, 1].set(
+                xlabel=r"Angle of Attack $\alpha$ [deg]",
+                ylabel="Drag Coefficient $C_D$",
+            )
+
+            ax[1, 0].plot(data["alpha"], data["CM"])
+            ax[1, 0].set(
+                xlabel=r"Angle of Attack $\alpha$ [deg]",
+                ylabel="Moment Coefficient $C_m$",
+            )
+
+            ax[1, 1].plot(data["CL"], data["CD"])
+            ax[1, 1].set(
+                xlabel=r"Angle of Attack $\alpha$ [deg]",
+                ylabel=r"Lift-to-Drag Ratio $C_L/C_D$",
+            )
+
+        plt.sca(ax[0, 0])
+        plt.legend(
+            title="Reynolds Number",
+            labels=[eng_string(Re) for Re in self.Res],
+            ncol=2,
+            # Note: `ncol` is old syntax; preserves backwards-compatibility with matplotlib 3.5.x.
+            # New matplotlib versions use `ncols` instead.
+            fontsize=8,
+            loc="lower right",
+        )
+
+        # for i, Re in enumerate(Res):
+        #     kwargs = dict(alpha=alphas, Re=Re, mach=mach)
+
+        #     plt.sca(ax[0, 0])
+        #     plt.plot(self.polars["alphas"], self.CL_function(**kwargs), color=Re_colors[i], alpha=0.7)
+
+        #     plt.sca(ax[0, 1])
+        #     plt.plot(alphas, self.CD_function(**kwargs), color=Re_colors[i], alpha=0.7)
+
+        #     plt.sca(ax[1, 0])
+        #     plt.plot(alphas, self.CM_function(**kwargs), color=Re_colors[i], alpha=0.7)
+
+        #     plt.sca(ax[1, 1])
+        #     plt.plot(
+        #         alphas,
+        #         self.CL_function(**kwargs) / self.CD_function(**kwargs),
+        #         color=Re_colors[i],
+        #         alpha=0.7,
+        #     )
+
+        # from aerosandbox.tools.string_formatting import eng_string
+
+        # plt.sca(ax[0, 0])
+        # plt.legend(
+        #     title="Reynolds Number",
+        #     labels=[eng_string(Re) for Re in Res],
+        #     ncol=2,
+        #     # Note: `ncol` is old syntax; preserves backwards-compatibility with matplotlib 3.5.x.
+        #     # New matplotlib versions use `ncols` instead.
+        #     fontsize=8,
+        #     loc="lower right",
+        # )
 
 
 if __name__ == "__main__":

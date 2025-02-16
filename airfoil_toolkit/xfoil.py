@@ -5,7 +5,7 @@ import tempfile
 import subprocess
 import numpy as np
 import matplotlib.pyplot as plt
-from airfoil import Airfoil
+from airfoil_toolkit.airfoil import Airfoil
 from pathlib import Path
 
 
@@ -91,8 +91,19 @@ def run_xfoil(
                 stderr=subprocess.PIPE,
             )
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"XFOIL failed with error: {e.stderr.decode()}")
-
+            if e.returncode == 11:
+                raise Exception(
+                    "XFoil segmentation-faulted. This is likely because your input airfoil has too many points.\n"
+                )
+            elif e.returncode == 8 or e.returncode == 136:
+                raise Exception(
+                    "XFoil returned a floating point exception. This is probably because you are trying to start\n"
+                    "your analysis at an operating point where the viscous boundary layer can't be initialized based\n"
+                    "on the computed inviscid flow. (You're probably hitting a Goldstein singularity.) Try starting\n"
+                    "your XFoil run at a less-aggressive (alpha closer to 0, higher Re) operating point."
+                )
+            else:
+                raise e
         if (
             not os.path.exists(output_file_path)
             or os.path.getsize(output_file_path) == 0
@@ -131,6 +142,7 @@ def run_xfoil(
                 "CM": np.array(cm),
                 "Top_Xtr": np.array(xtr_top),
                 "Bot_Xtr": np.array(xtr_bottom),
+                "Re": Re * np.ones_like(np.array(alpha)),
             }
 
             os.remove("./:00.bl")
