@@ -5,7 +5,7 @@ import tempfile
 import subprocess
 import numpy as np
 import matplotlib.pyplot as plt
-from airfoil_toolkit.airfoil import Airfoil
+from aerosandbox import Airfoil
 from pathlib import Path
 
 
