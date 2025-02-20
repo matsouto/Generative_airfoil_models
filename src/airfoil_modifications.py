@@ -1,5 +1,5 @@
 import numpy as np
-from airfoil_toolkit.aux import eng_string
+from src.aux import eng_string
 from aerosandbox.geometry.airfoil import Airfoil
 
 # Modify some methods from the Airfoil class from AeroSandbox library.
