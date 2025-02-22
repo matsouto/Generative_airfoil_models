@@ -6,25 +6,31 @@ from aerosandbox.geometry.airfoil import Airfoil
 
 
 def draw(
-    self, draw_mcl=False, draw_markers=True, backend="matplotlib", show=True
+    self,
+    fig=None,
+    draw_mcl=False,
+    draw_markers=True,
+    backend="plotly",
+    color="blue",
+    fill=True,
+    show=True,
 ) -> None:
     """
     Draw the airfoil object.
 
     Args:
+        fig: Matplotlib figure to use (optional)
         draw_mcl: Should we draw the mean camber line (MCL)? [boolean]
-
         backend: Which backend should we use? "plotly" or "matplotlib"
-
         show: Should we show the plot? [boolean]
 
     Returns: None
     """
     x = np.reshape(np.array(self.x()), -1)
     y = np.reshape(np.array(self.y()), -1)
-    # if draw_mcl:
-    #     x_mcl = np.linspace(np.min(x), np.max(x), len(x))
-    #     y_mcl = self.local_camber(x_mcl)
+    if draw_mcl:
+        x_mcl = np.linspace(np.min(x), np.max(x), len(x))
+        y_mcl = self.local_camber(x_mcl)
 
     if backend == "matplotlib":
         import matplotlib.pyplot as plt
@@ -33,8 +39,8 @@ def draw(
         color = "#280887"
         plt.plot(x, y, ".-" if draw_markers else "-", zorder=11, color=color)
         plt.fill(x, y, zorder=10, color=color, alpha=0.2)
-        # if draw_mcl:
-        #     plt.plot(x_mcl, y_mcl, "-", zorder=4, color=color, alpha=0.4)
+        if draw_mcl:
+            plt.plot(x_mcl, y_mcl, "-", zorder=4, color=color, alpha=0.4)
         plt.axis("equal")
         if show:
             p.show_plot(
@@ -46,27 +52,30 @@ def draw(
     elif backend == "plotly":
         import plotly.graph_objects as go
 
-        fig = go.Figure()
+        if fig is None:
+            fig = go.Figure()
+
         fig.add_trace(
             go.Scatter(
                 x=x,
                 y=y,
                 mode="lines+markers" if draw_markers else "lines",
-                name="Airfoil",
-                fill="toself",
-                line=dict(color="blue"),
+                name=self.name,
+                fill="toself" if fill else None,
+                line=dict(color=color),
             ),
         )
-        # if draw_mcl:
-        #     fig.add_trace(
-        #         go.Scatter(
-        #             x=x_mcl,
-        #             y=y_mcl,
-        #             mode="lines",
-        #             name="Mean Camber Line (MCL)",
-        #             line=dict(color="navy"),
-        #         )
-        #     )
+
+        if draw_mcl:
+            fig.add_trace(
+                go.Scatter(
+                    x=x_mcl,
+                    y=y_mcl,
+                    mode="lines",
+                    name="Mean Camber Line (MCL)",
+                    line=dict(color="navy"),
+                )
+            )
         fig.update_layout(
             xaxis_title="x/c",
             yaxis_title="y/c",
