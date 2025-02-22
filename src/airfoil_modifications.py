@@ -1,6 +1,14 @@
 import numpy as np
+from typing import Union
+from pathlib import Path
 from src.aux import eng_string
 from aerosandbox.geometry.airfoil import Airfoil
+import aerosandbox.numpy as np
+from aerosandbox.geometry.airfoil.airfoil_families import (
+    get_NACA_coordinates,
+    get_UIUC_coordinates,
+    get_file_coordinates,
+)
 
 # Modify some methods from the Airfoil class from AeroSandbox library.
 
