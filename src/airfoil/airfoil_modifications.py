@@ -1,5 +1,5 @@
 import numpy as np
-from src.Airfoil.aux import eng_string
+from src.airfoil.helpers import eng_string
 from aerosandbox.geometry.airfoil import Airfoil
 import aerosandbox.numpy as np
 

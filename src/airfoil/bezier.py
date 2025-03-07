@@ -1,4 +1,4 @@
-import src.Airfoil.aux as aux
+import src.airfoil.helpers as aux
 import numpy as np
 import matplotlib.pyplot as plt
 import neuralfoil as nf
