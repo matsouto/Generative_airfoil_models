@@ -9,7 +9,7 @@ from tensorflow.keras.layers import (
 )
 
 
-class CSTDiscriminator(tf.keras.Model):
+class CSTDiscriminatorCoords(tf.keras.Model):
     """
     * Refs:
         - Lin, Jinxing & Zhang, Chenliang & Xie, Xiaoye & Shi, Xingyu & Xu, Xiaoyu & Duan, Yanhui. (2022). CST-GANs: A Generative Adversarial Network Based on CST Parameterization for the Generation of Smooth Airfoils. 600-605. 10.1109/ICUS55513.2022.9987080.
@@ -21,6 +21,7 @@ class CSTDiscriminator(tf.keras.Model):
         dropout: float = 0.4,
         depth: int = 8,
         dense_units: int = 256,
+        n_points: int = 149,
     ):
         super().__init__()
 
@@ -30,6 +31,7 @@ class CSTDiscriminator(tf.keras.Model):
         self.dropout = dropout
         self.depth = depth
         self.dense_units = dense_units
+        self.n_points = n_points
 
         # --- Layers ---
 
@@ -85,7 +87,7 @@ class CSTDiscriminator(tf.keras.Model):
         self.dense2 = Dense(1, activation="sigmoid")
 
     def call(self, inputs):
-        x = tf.reshape(inputs, [-1, 2, 149, 1])
+        x = tf.reshape(inputs, [-1, 2, self.n_points, 1])
 
         x = self.conv1(x)
         x = self.batch1(x)
@@ -128,7 +130,7 @@ class CSTDiscriminator(tf.keras.Model):
 
 
 if __name__ == "__main__":
-    cst_discriminator = CSTDiscriminator()
+    cst_discriminator = CSTDiscriminatorCoords()
     latent_vector = tf.random.normal([1, 2, 149, 1])
     output = cst_discriminator(latent_vector)
     print("Output shape: ", output.shape)
