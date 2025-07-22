@@ -1,0 +1,4 @@
+Primeiro modelo supostamente funcional.
+Ao adicionar o ruido ao discriminador e triplicar o treinamento do discriminador, parece que finalmente consegui estabilizar a GAN
+
+a epoca 866 pareceu promissora

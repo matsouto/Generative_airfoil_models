@@ -1,0 +1,13 @@
+LOAD airfoil_toolkit/XFOIL_BIN/temp/airfoil.dat
+NACA0012
+PANE
+OPER
+Visc 1000000.0
+PACC
+airfoil_toolkit/XFOIL_BIN/temp/output.txt
+
+ITER 100
+ASeq 0.0 10.0 0.25
+
+
+quit

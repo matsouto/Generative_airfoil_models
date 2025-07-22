@@ -9,7 +9,7 @@ from tensorflow.keras.layers import (
     Reshape,
     ReLU,
 )
-from gan.cst_layer import CSTLayer
+from src.gan.cst_layer import CSTLayer
 from aerosandbox.geometry.airfoil import Airfoil, KulfanAirfoil
 from src.airfoil import airfoil_modifications
 
@@ -150,7 +150,7 @@ class CSTGenerator(tf.keras.Model):
         weights = self.final_reshape(x)
 
         if not self.use_modifications:
-            parameters = np.zeros_like(parameters)
+            parameters = tf.zeros_like(parameters)
 
         coordinates = self.cst_transform(weights, parameters)
 
@@ -158,6 +158,7 @@ class CSTGenerator(tf.keras.Model):
 
 
 if __name__ == "__main__":
+
     cst_generator = CSTGenerator()
 
     latent_vector = tf.random.normal([2, 128])

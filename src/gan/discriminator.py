@@ -9,7 +9,7 @@ from tensorflow.keras.layers import (
 )
 
 
-class CSTDiscriminatorCoords(tf.keras.Model):
+class CSTDiscriminator(tf.keras.Model):
     """
     * Refs:
         - Lin, Jinxing & Zhang, Chenliang & Xie, Xiaoye & Shi, Xingyu & Xu, Xiaoyu & Duan, Yanhui. (2022). CST-GANs: A Generative Adversarial Network Based on CST Parameterization for the Generation of Smooth Airfoils. 600-605. 10.1109/ICUS55513.2022.9987080.
@@ -84,7 +84,7 @@ class CSTDiscriminatorCoords(tf.keras.Model):
         self.batch7 = BatchNormalization(momentum=0.9)
         self.leaky_relu7 = LeakyReLU(0.2)
 
-        self.dense2 = Dense(1, activation="sigmoid")
+        self.dense2 = Dense(1)
 
     def call(self, inputs):
         x = tf.reshape(inputs, [-1, 2, self.n_points, 1])
@@ -130,8 +130,8 @@ class CSTDiscriminatorCoords(tf.keras.Model):
 
 
 if __name__ == "__main__":
-    cst_discriminator = CSTDiscriminatorCoords()
-    latent_vector = tf.random.normal([1, 2, 149, 1])
+    cst_discriminator = CSTDiscriminator(n_points=12)
+    latent_vector = tf.random.normal([1, 2, 12, 1])
     output = cst_discriminator(latent_vector)
     print("Output shape: ", output.shape)
-    float(output)
+    print(output)
