@@ -9,7 +9,7 @@ from tensorflow.keras.layers import (
     Reshape,
     ReLU,
 )
-from src.gan.cst_layer import CSTLayer
+from src.layers.cst_layer import CSTLayer
 from aerosandbox.geometry.airfoil import Airfoil, KulfanAirfoil
 from src.airfoil import airfoil_modifications
 
