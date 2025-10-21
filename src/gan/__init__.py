@@ -1,1 +1,2 @@
-from ..layers.cst_layer import CSTLayer
+from .discriminator import CSTDiscriminator
+from .generator import CSTGenerator
