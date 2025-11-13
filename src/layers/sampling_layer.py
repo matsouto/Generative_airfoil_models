@@ -1,7 +1,5 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
-from src.airfoil import airfoil_modifications
-import numpy as np
 
 
 class SamplingLayer(Layer):
