@@ -1,6 +1,7 @@
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 
 from aerosandbox import Airfoil
 from .airfoil import airfoil_modifications
@@ -12,6 +13,9 @@ def generate_and_plot_airfoils(
     num_airfoils: int = 9,
     time: float = None,
     figsize: tuple = (2.5, 2.5),
+    save_path: Path = None,
+    dpi: int = 100,
+    show: bool = True,
 ):
 
     def plot_samples(
@@ -87,8 +91,11 @@ def generate_and_plot_airfoils(
             loss_text = f"Epoch: {epoch} / Elapsed Time: {time:.2f}s"
             plt.figtext(0.5, 0.01, loss_text, ha="center", fontsize=4)
 
-        plt.savefig(f"./images/image_at_epoch_{epoch if epoch else "none"}.png")
-        plt.show()  # Display the plot inline
+        if save_path is not None:
+            plt.savefig(f"{save_path}/epoch_{epoch if epoch else "none"}.png", dpi=dpi)
+
+        if show:
+            plt.show()  # Display the plot inline
 
     def plot_shape(
         coordinates, x, y, ax, scale, scatter, dot_size, linewidth, **kwargs
