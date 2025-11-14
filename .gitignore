@@ -1,6 +1,7 @@
 *.png
 *.gif
 *.keras
+wandb/
 
 .qodo
 *.zip
