@@ -1,5 +1,7 @@
+import numpy as np
 import tensorflow as tf
 from src.layers.sampling_layer import SamplingLayer
+from src.layers.airfoil_scaler import AirfoilScaler
 from . import Encoder
 from . import Decoder
 
@@ -7,13 +9,20 @@ from . import Decoder
 class CSTVariationalAutoencoder(tf.keras.Model):
     """Combines the new Encoder and Decoder."""
 
-    def __init__(self, npv=12, latent_dim=128, use_modifications=True):
+    def __init__(
+        self,
+        scaler: AirfoilScaler,
+        npv=12,
+        latent_dim=128,
+        use_modifications=True,
+    ):
         super().__init__()
         self.encoder = Encoder(npv=npv, latent_dim=latent_dim)
         self.decoder = Decoder(
             npv=npv, latent_dim=latent_dim, use_modifications=use_modifications
         )
         self.sampling = SamplingLayer()
+        self.scaler = scaler
 
     def call(self, inputs):
         z_mean, z_log_var = self.encoder(inputs)

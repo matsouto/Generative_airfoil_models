@@ -63,9 +63,7 @@ class Decoder(tf.keras.Model):
         self.bn_p1 = BatchNormalization()
         self.relu_p1 = ReLU()
 
-        self.dense_p2 = Dense(
-            2, activation="relu"
-        )  # ReLU ensures parameters are non-negative
+        self.dense_p2 = Dense(2, activation="tanh")
 
         # Class-Shape Transformation Layer
         self.cst_transform = CSTLayer()
@@ -97,7 +95,8 @@ class Decoder(tf.keras.Model):
             parameters = tf.zeros_like(parameters)
 
         # Combine to get final coordinates
-        coordinates = self.cst_transform(weights, parameters)
+        # coordinates = self.cst_transform(weights, parameters)
+        coordinates = None
         return coordinates, weights, parameters
 
 
