@@ -48,7 +48,7 @@ random.seed(SEED)
 EPOCHS = 500  # Number of training epochs
 BATCH_SIZE = 32  # Batch size for training
 LATENT_DIM = 16  # Dimensionality of the latent space
-NPV = 12  # Number of CST coefficients per surface (MUST match dataset generation)
+NPV = 8  # Number of CST coefficients per surface (MUST match dataset generation)
 LEARNING_RATE = 1e-3  # Initial learning rate for Adam optimizer
 CLIPNORM = 1.0  # Gradient clipping norm to prevent exploding gradients
 WARMUP_EPOCHS = 100  # Number of epochs for KL annealing warm-up
@@ -66,12 +66,13 @@ HYPERPARAMETERS = {
     "smoothness_weight": SMOOTHNESS_WEIGHT,
 }
 
-PROJECT_PATH = "./"  # Project root directory
+PROJECT_PATH = Path(__file__).resolve().parent.parent.parent
 TIMESTRING = time.strftime("%Y%m%d-%H%M%S")
 
 # ============================================================================
 # DATASET LOADING AND PREPARATION
 # ============================================================================
+
 # Load the Kulfan parameter dataset
 train_dataset_path = (
     Path(PROJECT_PATH) / "data" / "processed" / "train_kulfan_dataset_75.json"
