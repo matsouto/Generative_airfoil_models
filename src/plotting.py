@@ -6,18 +6,37 @@ from typing import Union, List
 from aerosandbox import Airfoil
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.animation as animation
+import plotly.graph_objects as go
 
 # --- Helper Functions (Internal) ---
 
 
-def _gen_grid(num_items: int, bounds: tuple = (0.0, 1.0)):
-    """Generate a standardized grid layout for plotting multiple items."""
-    points_per_axis = int(np.ceil(np.sqrt(num_items)))
-    grid = np.mgrid[
-        [slice(bounds[0], bounds[1], points_per_axis * 1j) for _ in range(2)]
-    ]
-    grid = grid.reshape(2, -1).T
-    scale_factor = 1.0 / points_per_axis
+def _gen_grid(num_items: int):
+    """
+    Gera um layout de grid padronizado para plotar múltiplos itens.
+    Aplica a ordem de leitura correta (esquerda para direita, cima para baixo)
+    e ajusta o espaçamento vertical para perfis aerodinâmicos.
+    """
+    cols = int(np.ceil(np.sqrt(num_items)))
+    rows = int(np.ceil(num_items / cols))
+
+    # Definimos distâncias fixas: dx (largura) e dy (altura)
+    dx = 1.5  # Espaçamento horizontal entre perfis
+    dy = 0.8  # Espaçamento vertical reduzido (perfis são finos)
+
+    # Cria as coordenadas X (crescente) e Y (decrescente para começar do topo)
+    x = np.arange(cols) * dx
+    y = np.arange(rows)[::-1] * dy
+
+    xv, yv = np.meshgrid(x, y)
+
+    # Achata as matrizes combinando em pares (X, Y) na ordem de leitura
+    grid = np.column_stack((xv.ravel(), yv.ravel()))
+
+    # Como o espaçamento já está resolvido por dx e dy,
+    # o fator de escala extra do grid pode ser fixado em 1.0
+    scale_factor = 1.0
+
     return grid[:num_items], scale_factor
 
 
@@ -73,7 +92,10 @@ def _finalize_plot(
 
     if save_path is not None and filename is not None:
         Path(save_path).mkdir(parents=True, exist_ok=True)
-        plt.savefig(Path(save_path) / filename, dpi=dpi)
+        # O ajuste principal ocorre na linha abaixo
+        plt.savefig(
+            Path(save_path) / filename, dpi=dpi, bbox_inches="tight", pad_inches=0.1
+        )
 
     if show:
         plt.show()
@@ -462,6 +484,7 @@ def plot_original_and_reconstruction(
 
 def plot_airfoil_list(
     airfoils: Union[List[np.ndarray], List[Airfoil]],
+    labels: Union[str, bool, List[str]] = "index",
     text_label: str = None,
     figsize: tuple = (10, 10),
     scale: float = 0.8,
@@ -483,13 +506,10 @@ def plot_airfoil_list(
     Useful for visualizing invalid airfoils or other specific subsets.
     """
 
-    # Validate and convert input
     if not airfoils:
         print("No airfoils to plot.")
         return
 
-    # Extract coordinates from input (supports both Airfoil objects and numpy arrays)
-    # Standardize to numpy arrays for consistent handling
     coords_list = []
     for item in airfoils:
         if isinstance(item, Airfoil):
@@ -501,7 +521,13 @@ def plot_airfoil_list(
 
     num_items = len(coords_list)
 
-    # Create grid layout using helper function
+    # Validação de segurança: se fornecer uma lista de nomes, ela precisa ter o mesmo tamanho da lista de perfis
+    if isinstance(labels, list) and len(labels) != num_items:
+        print(
+            f"Aviso: A quantidade de labels ({len(labels)}) é diferente do número de perfis ({num_items}). Usando índices como fallback."
+        )
+        labels = "index"
+
     fig, ax = plt.subplots(figsize=figsize)
     grid_points, grid_scale = _gen_grid(num_items)
     final_scale = scale * grid_scale
@@ -520,15 +546,145 @@ def plot_airfoil_list(
             **kwargs,
         )
 
-        # Add index label for identification
-        ax.text(
-            pos[0],
-            pos[1] - (final_scale * 0.2),
-            f"Idx: {i}",
-            ha="center",
-            fontsize=8,
-            color="black",
-            fontfamily="monospace",
-        )
+        # Lógica de decisão para o texto
+        label_text = None
+        if labels == "index" or labels is True:
+            label_text = f"Idx: {i}"
+        elif isinstance(labels, list):
+            label_text = str(labels[i])
+
+        # Só desenha o texto se a variável não for nula
+        if label_text:
+            ax.text(
+                pos[0] + (final_scale * 0.5),
+                pos[1] - (final_scale * 0.25),
+                label_text,
+                ha="center",
+                fontsize=8,
+                color="black",
+                fontfamily="monospace",
+            )
 
     _finalize_plot(text_label, save_path, filename, dpi, show)
+
+
+def plot_airfoil_superposition(
+    airfoils: List[Airfoil],
+    draw_mcl: bool = False,
+    draw_markers: bool = False,
+    show_legend: bool = False,
+    show: bool = True,
+    base_width: int = 1000,
+    save_path: Union[Path, str] = None,
+    filename: str = "dataset.png",
+    scale: float = 1.0,
+) -> Union[None, go.Figure]:
+    """
+    Plota um dataset de perfis sobrepostos usando Plotly.
+    Otimizado para legibilidade em documentos PDF com fontes maiores,
+    mantendo as bordas brancas (sem quadro delimitador).
+    """
+    fig = go.Figure()
+
+    all_x = []
+    all_y = []
+
+    for i, airfoil in enumerate(airfoils):
+        x = np.reshape(np.array(airfoil.x()), -1)
+        y = np.reshape(np.array(airfoil.y()), -1)
+
+        all_x.extend(x)
+        all_y.extend(y)
+
+        name = airfoil.name if airfoil.name else f"Perfil {i}"
+
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=y,
+                mode="lines+markers" if draw_markers else "lines",
+                name=name,
+                opacity=0.5,
+                line=dict(width=2.0),
+            )
+        )
+
+        if draw_mcl:
+            x_mcl = np.linspace(np.min(x), np.max(x), len(x))
+            y_mcl = airfoil.local_camber(x_mcl)
+
+            fig.add_trace(
+                go.Scatter(
+                    x=x_mcl,
+                    y=y_mcl,
+                    mode="lines",
+                    name=f"{name} (MCL)",
+                    line=dict(dash="dot", width=1.5),
+                    opacity=0.4,
+                )
+            )
+
+    if all_x and all_y:
+        min_x, max_x = min(all_x), max(all_x)
+        min_y, max_y = min(all_y), max(all_y)
+
+        pad = (max_x - min_x) * 0.05
+
+        range_x = [min_x - pad, max_x + pad]
+        range_y = [min_y - pad, max_y + pad]
+
+        dx = range_x[1] - range_x[0]
+        dy = range_y[1] - range_y[0]
+
+        aspect_ratio = dy / dx if dx > 0 else 1
+
+        final_height = int(base_width * aspect_ratio) + 120
+    else:
+        range_x = None
+        range_y = None
+        final_height = 400
+
+    fig.update_layout(
+        width=base_width,
+        height=final_height,
+        showlegend=show_legend,
+        font=dict(family="Arial, sans-serif", size=18, color="black"),
+        xaxis_title="x/c",
+        yaxis_title="y/c",
+        xaxis_title_font=dict(size=22, family="Arial, sans-serif", color="black"),
+        yaxis_title_font=dict(size=22, family="Arial, sans-serif", color="black"),
+        xaxis=dict(
+            range=range_x,
+            tickfont=dict(size=16),
+            showline=False,  # Remove a linha inferior do eixo
+        ),
+        yaxis=dict(
+            range=range_y,
+            scaleanchor="x",
+            scaleratio=1,
+            zeroline=True,
+            zerolinecolor="gray",
+            zerolinewidth=1.5,
+            tickfont=dict(size=16),
+            showline=False,  # Remove a linha lateral do eixo
+        ),
+        hovermode="closest",
+        plot_bgcolor="white",
+        margin=dict(l=60, r=40, t=30, b=60),
+    )
+
+    fig.update_xaxes(showgrid=True, gridwidth=1.5, gridcolor="LightGray")
+    fig.update_yaxes(showgrid=True, gridwidth=1.5, gridcolor="LightGray")
+
+    if save_path is not None and filename is not None:
+        out_path = Path(save_path)
+        out_path.mkdir(parents=True, exist_ok=True)
+        full_file_path = out_path / filename
+
+        fig.write_image(str(full_file_path), scale=scale)
+        print(f"Gráfico salvo em: {full_file_path} com escala {scale}x")
+
+    if show:
+        fig.show()
+    else:
+        return fig

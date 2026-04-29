@@ -10,45 +10,87 @@ def draw(
     self,
     fig=None,
     draw_mcl=False,
-    draw_markers=True,
-    backend="plotly",
-    color="blue",
+    draw_markers=False,  # Mude para True ao chamar a função se quiser ver os pontos
+    backend="matplotlib",
+    main_color="#2F4F4F",  # Slate Gray (Elegante e profissional)
+    mcl_color="#B22222",  # Firebrick Red (Para a linha média)
     fill=True,
     show=True,
+    save_path=None,
 ) -> None:
     """
-    Draw the airfoil object.
+    Draw the airfoil object with academic/publication quality.
 
     Args:
-        fig: Matplotlib figure to use (optional)
+        fig: Matplotlib/Plotly figure to use (optional)
         draw_mcl: Should we draw the mean camber line (MCL)? [boolean]
+        draw_markers: Should we plot the discrete nodes? [boolean]
         backend: Which backend should we use? "plotly" or "matplotlib"
+        main_color: Primary hex color for the airfoil outline.
+        mcl_color: Hex color for the Mean Camber Line.
+        fill: Fill the airfoil shape? [boolean]
         show: Should we show the plot? [boolean]
 
     Returns: None
     """
     x = np.reshape(np.array(self.x()), -1)
     y = np.reshape(np.array(self.y()), -1)
+
     if draw_mcl:
         x_mcl = np.linspace(np.min(x), np.max(x), len(x))
         y_mcl = self.local_camber(x_mcl)
 
     if backend == "matplotlib":
         import matplotlib.pyplot as plt
-        import aerosandbox.tools.pretty_plots as p
 
-        color = "#280887"
-        plt.plot(x, y, ".-" if draw_markers else "-", zorder=11, color=color)
-        plt.fill(x, y, zorder=10, color=color, alpha=0.2)
-        if draw_mcl:
-            plt.plot(x_mcl, y_mcl, "-", zorder=4, color=color, alpha=0.4)
-        plt.axis("equal")
-        if show:
-            p.show_plot(
-                title=f"{self.name} Airfoil",
-                xlabel=r"$x/c$",
-                ylabel=r"$y/c$",
+        # Opcional: força uma fonte serifada para combinar com o LaTeX do texto
+        # plt.rcParams['font.family'] = 'serif'
+
+        # Configura o estilo da linha e dos marcadores
+        if draw_markers:
+            plt.plot(
+                x,
+                y,
+                linestyle="-",
+                marker="o",
+                markersize=3,
+                zorder=11,
+                color=main_color,
+                linewidth=1.5,
             )
+        else:
+            plt.plot(x, y, linestyle="-", zorder=11, color=main_color, linewidth=1.5)
+
+        if fill:
+            plt.fill(x, y, zorder=10, color="#708090", alpha=0.15)
+
+        if draw_mcl:
+            plt.plot(
+                x_mcl,
+                y_mcl,
+                "--",
+                zorder=12,
+                color=mcl_color,
+                linewidth=1.2,
+                label="MCL",
+            )
+            plt.legend(loc="best", frameon=False)
+
+        plt.axis("equal")
+        plt.grid(True, linestyle=":", alpha=0.6, zorder=0)
+
+        plt.title(f"Perfil Aerodinâmico: {self.name}", fontsize=12, fontweight="bold")
+        plt.xlabel(r"$x/c$", fontsize=11)
+        plt.ylabel(r"$y/c$", fontsize=11)
+
+        # Remove a borda superior e direita (estilo paper/artigo científico)
+        ax = plt.gca()
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        if show:
+            plt.tight_layout()
+            plt.show()
 
     elif backend == "plotly":
         import plotly.graph_objects as go
@@ -56,14 +98,19 @@ def draw(
         if fig is None:
             fig = go.Figure()
 
+        # Configura as propriedades do traço dependendo se queremos marcadores ou não
+        trace_mode = "lines+markers" if draw_markers else "lines"
+
         fig.add_trace(
             go.Scatter(
                 x=x,
                 y=y,
-                mode="lines+markers" if draw_markers else "lines",
-                name=self.name,
+                mode=trace_mode,
+                name="Contorno",
                 fill="toself" if fill else None,
-                line=dict(color=color),
+                fillcolor="rgba(112, 128, 144, 0.15)",
+                line=dict(color=main_color, width=2),
+                marker=dict(size=7, color=main_color) if draw_markers else None,
             ),
         )
 
@@ -73,16 +120,28 @@ def draw(
                     x=x_mcl,
                     y=y_mcl,
                     mode="lines",
-                    name="Mean Camber Line (MCL)",
-                    line=dict(color="navy"),
+                    name="Linha de Arqueamento Médio (MCL)",
+                    line=dict(color=mcl_color, width=2, dash="dash"),
                 )
             )
+
         fig.update_layout(
             xaxis_title="x/c",
             yaxis_title="y/c",
-            yaxis=dict(scaleanchor="x", scaleratio=1),
-            title=f"{self.name} Airfoil",
+            # title=dict(text=f"<b>Perfil: {self.name}</b>", x=0.5),
+            plot_bgcolor="white",
+            xaxis=dict(
+                showgrid=True, gridcolor="lightgray", gridwidth=1, zeroline=False
+            ),
+            yaxis=dict(
+                showgrid=True, gridcolor="lightgray", gridwidth=1, zeroline=False
+            ),
         )
+
+        if save_path:
+            fig.write_image(save_path, width=2000, height=600, scale=4)
+            print(f"Gráfico salvo com sucesso em: {save_path}")
+
         if show:
             fig.show()
         else:
