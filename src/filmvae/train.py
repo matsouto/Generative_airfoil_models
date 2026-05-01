@@ -47,7 +47,6 @@ WARMUP_EPOCHS = 100
 TARGET_BETA = 0.01
 SMOOTHNESS_WEIGHT = 0
 CONDITION_COLUMNS = ("Cl", "alpha")
-CONDITION_DIM = 2
 
 TRAIN_DATASET = "train_filmvae_dataset_8.json"
 VALIDATION_DATASET = "val_filmvae_dataset_8.json"
@@ -161,17 +160,21 @@ def resolve_condition_columns(airfoil_dataset, requested_columns):
 
 
 def build_airfoil_matrix(airfoil_dataset):
-    airfoil_data = np.concatenate(
-        [
-            airfoil_dataset["upper_weights"],
-            airfoil_dataset["lower_weights"],
-            airfoil_dataset["TE_thickness"].values[:, None],
-            airfoil_dataset["leading_edge_weight"].values[:, None],
-        ],
-        axis=0,
-    ).to_numpy()
+    airfoil_data = airfoil_dataset.apply(
+        lambda row: np.concatenate(
+            [
+                np.asarray(row["upper_weights"], dtype=np.float32),
+                np.asarray(row["lower_weights"], dtype=np.float32),
+                np.asarray(
+                    [row["TE_thickness"], row["leading_edge_weight"]],
+                    dtype=np.float32,
+                ),
+            ]
+        ),
+        axis=1,
+    )
 
-    return np.stack(airfoil_data, axis=0).astype(np.float32)
+    return np.stack(airfoil_data.to_numpy(), axis=0).astype(np.float32)
 
 
 def build_condition_matrix(airfoil_dataset, condition_columns):
@@ -180,6 +183,20 @@ def build_condition_matrix(airfoil_dataset, condition_columns):
         raise ValueError(f"Condition columns {condition_columns} contain NaN values.")
 
     return condition_values.reshape(-1, len(condition_columns))
+
+
+def sample_validation_airfoils(airfoil_dataset, sample_size, random_state=None):
+    if sample_size > len(airfoil_dataset):
+        raise ValueError(
+            "Validation sample size cannot exceed dataset size. "
+            f"Requested {sample_size}, available {len(airfoil_dataset)}."
+        )
+
+    return airfoil_dataset.sample(
+        n=sample_size,
+        replace=False,
+        random_state=random_state,
+    ).reset_index(drop=True)
 
 
 def build_model(model_name, scaler, npv, latent_dim):
@@ -250,7 +267,7 @@ def main():
     scaler.fit(raw_weights, raw_params)
 
     print("✓ Fitting condition scaler to data...")
-    condition_scaler = ConditionScaler(condition_dim=len(condition_columns))
+    condition_scaler = ConditionScaler()
     condition_scaler.fit(condition_data)
 
     print(f"  Weight range: ±{np.max(scaler.w_max):.6f}")
@@ -293,20 +310,20 @@ def main():
         validation_airfoil_dataset,
         condition_columns,
     )
-
-    validation_airfoils_sample = validation_airfoil_dataset.iloc[
-        : args.airfoils_to_plot
-    ].reset_index(drop=True)
-    print(
-        f"✓ Selected {len(validation_airfoils_sample)} airfoils for validation visualization"
+    validation_airfoils_sample = sample_validation_airfoils(
+        validation_airfoil_dataset,
+        args.airfoils_to_plot,
+        random_state=args.seed,
     )
     validation_airfoils = [
         Airfoil(coordinates=af["coordinates"], name=af["airfoil_name"])
         for af in validation_airfoils_sample.to_dict(orient="records")
     ]
+    print(
+        f"✓ Selected {len(validation_airfoils_sample)} fixed airfoils for validation visualization"
+    )
 
     weight_dim = 2 * args.npv
-
     validation_geometry = build_airfoil_matrix(validation_airfoils_sample)
     validation_condition = build_condition_matrix(
         validation_airfoils_sample,
@@ -326,7 +343,6 @@ def main():
         scaler,
         npv=args.npv,
         latent_dim=args.latent_dim,
-        condition_dim=len(condition_columns),
     )
     optimizer = tf.keras.optimizers.Adam(
         learning_rate=args.learning_rate,
@@ -510,32 +526,35 @@ def main():
                 }
             )
 
-        reco_weights_norm, reco_params_norm = vae(
-            (validation_geometry, validation_condition),
-            training=False,
-        )
-
-        real_reco_weights, real_reco_params = vae.scaler.inverse_transform(
-            reco_weights_norm.numpy(),
-            reco_params_norm.numpy(),
-        )
-
-        w_tensor = tf.convert_to_tensor(real_reco_weights, dtype=tf.float32)
-        p_tensor = tf.convert_to_tensor(real_reco_params, dtype=tf.float32)
-        reco_coords = vae.decoder.cst_transform(w_tensor, p_tensor).numpy()
-
-        reconstructed_airfoils = []
-        for coords in reco_coords:
-            reconstructed_airfoils.append(Airfoil(coordinates=coords))
-
         if (epoch + 1) % args.checkpoint_epochs == 0:
+            reco_weights_norm, reco_params_norm = vae(
+                (validation_geometry, validation_condition),
+                training=False,
+            )
+
+            real_reco_weights, real_reco_params = vae.scaler.inverse_transform(
+                reco_weights_norm.numpy(),
+                reco_params_norm.numpy(),
+            )
+
+            w_tensor = tf.convert_to_tensor(real_reco_weights, dtype=tf.float32)
+            p_tensor = tf.convert_to_tensor(real_reco_params, dtype=tf.float32)
+            reco_coords = vae.decoder.cst_transform(w_tensor, p_tensor).numpy()
+
+            reconstructed_airfoils = [
+                Airfoil(coordinates=coords) for coords in reco_coords
+            ]
+
             print(f"  └─ Saving visualization for epoch {epoch+1}...", end="")
             weights_fn = f"vae_weights_epoch_{epoch+1}.weights.h5"
             vae.save_weights(os.path.join(models_path, weights_fn))
             plot_original_and_reconstruction(
                 validation_airfoils,
                 reconstructed_airfoils,
-                text_label=f"Epoch: {epoch+1} / Elapsed Time: {elapsed_time:.2f}s",
+                text_label=(
+                    f"Epoch: {epoch+1} / Total Loss: {epoch_total_loss.result():.5f} "
+                    f"/ Elapsed Time: {elapsed_time:.2f}s"
+                ),
                 save_path=images_path,
                 filename=f"reconstruction_epoch_{epoch+1}.png",
                 show=False,
