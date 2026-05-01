@@ -16,7 +16,7 @@ from tqdm import tqdm
 from src import vae
 from src.vae import CSTVariationalAutoencoder
 from src.plotting import plot_original_and_reconstruction
-from src.layers.airfoil_scaler import AirfoilScaler
+from src.scalers.airfoil_scaler import AirfoilScaler
 
 from src.airfoil import airfoil_modifications
 
@@ -27,26 +27,28 @@ np.random.seed(SEED)
 random.seed(SEED)
 
 # --- Hyperparameters ---
-EPOCHS = 1000 # 5000
+EPOCHS = 1000  # 5000
 
 BATCH_SIZE = 32
 LATENT_DIM = 16
-NPV = 12 # Number of CST coefficients MUST BE EQUAL TO THE ONE USED IN DATASET GENERATION
+NPV = (
+    12  # Number of CST coefficients MUST BE EQUAL TO THE ONE USED IN DATASET GENERATION
+)
 LEARNING_RATE = 1e-3
 CLIPNORM = 1.0  # Gradient clipping norm value
-WARMUP_EPOCHS = 1000 # Number of epochs for KL annealing warm-up
-TARGET_BETA = 0.005 # Weight for KL Divergence Loss
+WARMUP_EPOCHS = 1000  # Number of epochs for KL annealing warm-up
+TARGET_BETA = 0.005  # Weight for KL Divergence Loss
 
-SMALL_SIZE = 32 # Number of samples to overfit on
+SMALL_SIZE = 32  # Number of samples to overfit on
 
 HYPERPARAMETERS = {
-    'epochs': EPOCHS,
-    'latent_dim': LATENT_DIM,
-    'initial_learning_rate': LEARNING_RATE,
-    'target_beta': TARGET_BETA,
-    'warmup_epochs': WARMUP_EPOCHS,
-    'batch_size': BATCH_SIZE,
-    'clipnorm': CLIPNORM,
+    "epochs": EPOCHS,
+    "latent_dim": LATENT_DIM,
+    "initial_learning_rate": LEARNING_RATE,
+    "target_beta": TARGET_BETA,
+    "warmup_epochs": WARMUP_EPOCHS,
+    "batch_size": BATCH_SIZE,
+    "clipnorm": CLIPNORM,
 }
 
 proj_path = "./"
@@ -58,19 +60,29 @@ print("Loading dataset...")
 airfoil_dataset = pd.read_json(dataset_path)
 
 # Fix coordinates
-airfoil_dataset["coordinates"] = airfoil_dataset["coordinates"].apply(lambda coords: np.array(coords))
+airfoil_dataset["coordinates"] = airfoil_dataset["coordinates"].apply(
+    lambda coords: np.array(coords)
+)
 
 # Prepare the data: concatenate lower and upper weights along with TE thickness and leading edge weight
-airfoil_data = airfoil_dataset["kulfan_parameters"].apply(
-  lambda p: np.concatenate([
-    p["lower_weights"], 
-    p["upper_weights"], 
-    [p["TE_thickness"]], 
-    [p["leading_edge_weight"]]
-    ], axis=0)).to_numpy()
+airfoil_data = (
+    airfoil_dataset["kulfan_parameters"]
+    .apply(
+        lambda p: np.concatenate(
+            [
+                p["lower_weights"],
+                p["upper_weights"],
+                [p["TE_thickness"]],
+                [p["leading_edge_weight"]],
+            ],
+            axis=0,
+        )
+    )
+    .to_numpy()
+)
 
 airfoil_data = np.stack(airfoil_data, axis=0).astype(np.float32)
-  
+
 raw_weights = airfoil_data[:, :-2]
 raw_params = airfoil_data[:, -2:]
 
@@ -78,7 +90,7 @@ print(f"Original Dataset Size: {len(raw_params)}")
 
 # Filter 1: Reasonable Thickness (e.g., < 5cm)
 # If your data is normalized, ensure this check happens on raw physical values
-valid_te = raw_params[:, 0] < 0.05 
+valid_te = raw_params[:, 0] < 0.05
 
 # Filter 2: Reasonable Weights (e.g., between -2 and 2)
 # Any weight larger than this is likely a glitch
@@ -111,15 +123,26 @@ print(
 
 # Picking airfoils for validation and plotting
 validation_airfoils_df = airfoil_dataset.iloc[:9].reset_index(drop=True)
-validation_airfoils = [Airfoil(coordinates=af["coordinates"], name=af["airfoil_name"]) for af in validation_airfoils_df.to_dict(orient="records")]
+validation_airfoils = [
+    Airfoil(coordinates=af["coordinates"], name=af["airfoil_name"])
+    for af in validation_airfoils_df.to_dict(orient="records")
+]
 
-validation_input = validation_airfoils_df["kulfan_parameters"].apply(
-  lambda p: np.concatenate([
-    p["lower_weights"], 
-    p["upper_weights"], 
-    [p["TE_thickness"]], 
-    [p["leading_edge_weight"]]
-    ], axis=0)).to_list()
+validation_input = (
+    validation_airfoils_df["kulfan_parameters"]
+    .apply(
+        lambda p: np.concatenate(
+            [
+                p["lower_weights"],
+                p["upper_weights"],
+                [p["TE_thickness"]],
+                [p["leading_edge_weight"]],
+            ],
+            axis=0,
+        )
+    )
+    .to_list()
+)
 
 validation_input = tf.convert_to_tensor(validation_input, dtype=tf.float32)
 weights = validation_input[:, :24]
@@ -129,7 +152,7 @@ validation_input = scaler.transform(weights, params)
 # --- Instantiate Model, Optimizer, and Loss ---
 vae = CSTVariationalAutoencoder(scaler, npv=NPV, latent_dim=LATENT_DIM)
 
-best_loss = float('inf')
+best_loss = float("inf")
 wait = 0
 current_lr = LEARNING_RATE  # Seu LR inicial
 optimizer = tf.keras.optimizers.Adam(learning_rate=current_lr, clipnorm=CLIPNORM)
@@ -137,6 +160,7 @@ optimizer = tf.keras.optimizers.Adam(learning_rate=current_lr, clipnorm=CLIPNORM
 # Main Loss (Reconstruction Loss)
 # reconstruction_loss = tf.keras.losses.MeanSquaredError()
 reconstruction_loss = tf.keras.losses.MeanAbsoluteError()
+
 
 # --- Training Step (for one batch) ---
 @tf.function
@@ -149,7 +173,7 @@ def train_step(data, beta):
         # training=True enables the SamplingLayer noise
         reconstruction = vae(data, training=True)
         _, pred_weights, pred_params = reconstruction
-        
+
         # 2. Split Targets
         # data shape: (Batch, 26)
         true_weights, true_params = tf.split(data, [2 * NPV, 2], axis=1)
@@ -160,11 +184,15 @@ def train_step(data, beta):
 
         # 4. Calculate Reconstruction Loss (Sum of Squares)
         # We use SUM to match the magnitude of the physics
-        loss_weights = tf.reduce_mean(tf.reduce_sum(tf.square(true_weights - pred_weights_flat), axis=1))
-        loss_params = tf.reduce_mean(tf.reduce_sum(tf.square(true_params - pred_params), axis=1))
-        
+        loss_weights = tf.reduce_mean(
+            tf.reduce_sum(tf.square(true_weights - pred_weights_flat), axis=1)
+        )
+        loss_params = tf.reduce_mean(
+            tf.reduce_sum(tf.square(true_params - pred_params), axis=1)
+        )
+
         reco_loss = loss_weights + loss_params
-        
+
         # 5. KL Loss (Already calculated inside the model via self.add_loss)
         kl_loss = sum(vae.losses)
 
@@ -174,14 +202,15 @@ def train_step(data, beta):
     # 7. Backpropagation
     grads = tape.gradient(total_loss, vae.trainable_weights)
     optimizer.apply_gradients(zip(grads, vae.trainable_weights))
-    
+
     return total_loss, reco_loss, kl_loss
 
+
 wandb.init(
-    project="CSTVAE",  
+    project="CSTVAE",
     config=HYPERPARAMETERS,
     name=f"VAE_{time.strftime('%Y%m%d-%H%M%S')}",
-    notes="Dense Arch + Linear Output + Sum Loss + Scaler"
+    notes="Dense Arch + Linear Output + Sum Loss + Scaler",
 )
 
 VERBOSE = 1
@@ -197,7 +226,7 @@ print("Starting training...")
 start_time = time.time()
 
 for epoch in range(EPOCHS):
-    
+
     # Reset metrics at the start of each epoch
     epoch_total_loss = tf.keras.metrics.Mean()
     epoch_reco_loss = tf.keras.metrics.Mean()
@@ -208,15 +237,15 @@ for epoch in range(EPOCHS):
         BETA = TARGET_BETA * (epoch / WARMUP_EPOCHS)
     else:
         BETA = TARGET_BETA
-    
-    wandb.log({'beta': BETA})
+
+    wandb.log({"beta": BETA})
 
     # Iterate over each batch in the dataset
     for x_batch in tqdm(train_dataset, desc=f"Epoch {epoch+1}/{EPOCHS}"):
 
         # Run one training step
         total_loss, reco_loss, kl_loss = train_step(x_batch, BETA)
-        
+
         # Update the epoch's average loss
         epoch_total_loss.update_state(total_loss)
         epoch_reco_loss.update_state(reco_loss)
@@ -224,19 +253,23 @@ for epoch in range(EPOCHS):
 
     # --- End of Epoch ---
     elapsed_time = time.time() - start_time
-    
+
     if VERBOSE > 0:
-        print(f"Epoch {epoch+1}/{EPOCHS}, "
-              f"Time: {elapsed_time:.2f}s, "
-              f"Total Loss: {epoch_total_loss.result():.4f}, "
-              f"Reco Loss: {epoch_reco_loss.result():.4f}, "
-              f"KL Loss: {epoch_kl_loss.result():.4f}")
-    
-    wandb.log({
-        'epoch_total_loss': epoch_total_loss.result(),
-        'epoch_reconstruction_loss': epoch_reco_loss.result(),
-        'epoch_kl_loss': epoch_kl_loss.result(),
-    })
+        print(
+            f"Epoch {epoch+1}/{EPOCHS}, "
+            f"Time: {elapsed_time:.2f}s, "
+            f"Total Loss: {epoch_total_loss.result():.4f}, "
+            f"Reco Loss: {epoch_reco_loss.result():.4f}, "
+            f"KL Loss: {epoch_kl_loss.result():.4f}"
+        )
+
+    wandb.log(
+        {
+            "epoch_total_loss": epoch_total_loss.result(),
+            "epoch_reconstruction_loss": epoch_reco_loss.result(),
+            "epoch_kl_loss": epoch_kl_loss.result(),
+        }
+    )
 
     # print("Generating and plotting airfoils...")
 
@@ -248,8 +281,7 @@ for epoch in range(EPOCHS):
 
     # 2. Denormalize to Physical Values
     real_reco_weights, real_reco_params = vae.scaler.inverse_transform(
-        reco_weights_norm.numpy(), 
-        reco_params_norm.numpy()
+        reco_weights_norm.numpy(), reco_params_norm.numpy()
     )
 
     # 3. Generate Coordinates using the Model's Internal Logic
@@ -270,10 +302,10 @@ for epoch in range(EPOCHS):
         # vae.save_weights(f"{models_path}/model_epoch_{epoch+1}.weights.h5")
 
         plot_original_and_reconstruction(
-            validation_airfoils, 
-            reconstructed_airfoils, 
-            text_label=f"Epoch: {epoch+1} / Elapsed Time: {elapsed_time:.2f}s", 
-            save_path=images_path, 
+            validation_airfoils,
+            reconstructed_airfoils,
+            text_label=f"Epoch: {epoch+1} / Elapsed Time: {elapsed_time:.2f}s",
+            save_path=images_path,
             filename=f"reconstruction_epoch_{epoch+1}.png",
-            show=False
+            show=False,
         )

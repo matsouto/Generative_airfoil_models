@@ -1,33 +1,30 @@
 import numpy as np
 import tensorflow as tf
 from src.layers.sampling_layer import SamplingLayer
-from src.layers.airfoil_scaler import AirfoilScaler
+from src.scalers.airfoil_scaler import AirfoilScaler
 from . import Encoder
 from . import Decoder
 
 
-class CSTVariationalAutoencoder(tf.keras.Model): # type: ignore
+class CSTVariationalAutoencoder(tf.keras.Model):  # type: ignore
     """Combines the new Encoder and Decoder."""
 
     def __init__(
         self,
         scaler: AirfoilScaler,
         npv=12,
-        latent_dim=128,
-        use_modifications=True,
+        latent_dim=12,
     ):
         super().__init__()
         self.encoder = Encoder(npv=npv, latent_dim=latent_dim)
-        self.decoder = Decoder(
-            npv=npv, latent_dim=latent_dim, use_modifications=use_modifications
-        )
+        self.decoder = Decoder(npv=npv, latent_dim=latent_dim)
         self.sampling = SamplingLayer()
         self.scaler = scaler
 
-    def call(self, inputs):
+    def call(self, inputs, training=None):
         z_mean, z_log_var = self.encoder(inputs)
-        z = self.sampling([z_mean, z_log_var])
-        reconstructed = self.decoder(z)
+        z = self.sampling([z_mean, z_log_var], training=training)
+        reconstructed = self.decoder(z, training=training)
 
         # Adding additional KL divergence loss to the model
         kl_loss = -0.5 * tf.reduce_mean(
@@ -42,7 +39,7 @@ class CSTVariationalAutoencoder(tf.keras.Model): # type: ignore
 if __name__ == "__main__":
     BATCH_SIZE = 4
     NPV = 12
-    LATENT_DIM = 128
+    LATENT_DIM = 12
 
     scaler = AirfoilScaler()
 
@@ -57,7 +54,7 @@ if __name__ == "__main__":
     coords, weights, params = vae(vae_input)
 
     print("--- VAE ---")
-    print(f"Input shape: {vae_input.shape}") # type: ignore
+    print(f"Input shape: {vae_input.shape}")  # type: ignore
     # print(f"Reconstructed Coordinates shape: {coords.shape}")
     print(f"Reconstructed Weights shape: {weights.shape}")
     print(f"Reconstructed Parameters shape: {params.shape}")

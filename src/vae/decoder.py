@@ -9,11 +9,10 @@ class Decoder(tf.keras.Model):  # type: ignore
     Directly maps latent code z -> CST coefficients.
     """
 
-    def __init__(self, npv=12, latent_dim=16, use_modifications=True):
+    def __init__(self, npv=12, latent_dim=16):
         super().__init__()
         self.npv = npv
         self.latent_dim = latent_dim
-        self.use_modifications = use_modifications
 
         # Calculate output size: (2 surfaces * NPV)
         self.num_weights = 2 * self.npv
@@ -54,9 +53,6 @@ class Decoder(tf.keras.Model):  # type: ignore
 
         # Generate parameters
         parameters = self.dense_params(x)
-
-        if not self.use_modifications:
-            parameters = tf.zeros_like(parameters)
 
         # Returning coords=None during training to save speed
         return weights, parameters
