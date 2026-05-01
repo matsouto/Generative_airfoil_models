@@ -13,7 +13,6 @@ from tqdm import tqdm
 
 from src.scalers.airfoil_scaler import AirfoilScaler
 from src.plotting import plot_original_and_reconstruction
-from src.utils import compute_vod_loss
 from src.vae import CSTVariationalAutoencoder
 
 # ============================================================================
@@ -38,7 +37,6 @@ LEARNING_RATE = 1e-3  # Initial learning rate for Adam optimizer
 CLIPNORM = 1.0  # Gradient clipping norm to prevent exploding gradients
 WARMUP_EPOCHS = 100  # Number of epochs for KL annealing warm-up
 TARGET_BETA = 0.01  # Final weight for KL Divergence loss (reached after warmup)
-SMOOTHNESS_WEIGHT = 0  # Weight for the smoothness loss term
 
 # For wandb logging, we will pass these hyperarameters as a dictionary for easy tracking and reproducibility
 HYPERPARAMETERS = {
@@ -49,7 +47,6 @@ HYPERPARAMETERS = {
     "warmup_epochs": WARMUP_EPOCHS,
     "batch_size": BATCH_SIZE,
     "clipnorm": CLIPNORM,
-    "smoothness_weight": SMOOTHNESS_WEIGHT,
 }
 
 PROJECT_PATH = Path(__file__).resolve().parent.parent.parent
@@ -85,7 +82,6 @@ def parse_args():
     parser.add_argument("--clipnorm", type=float, default=CLIPNORM)
     parser.add_argument("--warmup-epochs", type=int, default=WARMUP_EPOCHS)
     parser.add_argument("--target-beta", type=float, default=TARGET_BETA)
-    parser.add_argument("--smoothness-weight", type=float, default=SMOOTHNESS_WEIGHT)
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--airfoils-to-plot", type=int, default=AIRFOILS_TO_PLOT)
     parser.add_argument("--checkpoint-epochs", type=int, default=CHECKPOINT_EPOCHS)
@@ -104,7 +100,6 @@ def build_hyperparameters(args):
         "warmup_epochs": args.warmup_epochs,
         "batch_size": args.batch_size,
         "clipnorm": args.clipnorm,
-        "smoothness_weight": args.smoothness_weight,
         "npv": args.npv,
         "seed": args.seed,
     }
@@ -283,18 +278,12 @@ def main():
             reco_loss = loss_weights + loss_params
 
             kl_loss = sum(vae.losses)
-            pred_coords_norm = vae.decoder.cst_transform(pred_weights, pred_params)
-            y_pred_coords_norm = pred_coords_norm[:, :, 1]
-            vod_loss = compute_vod_loss(y_pred_coords_norm)
-
-            total_loss = (
-                reco_loss + (beta * kl_loss) + (args.smoothness_weight * vod_loss)
-            )
+            total_loss = reco_loss + (beta * kl_loss)
 
         grads = tape.gradient(total_loss, vae.trainable_weights)
         optimizer.apply_gradients(zip(grads, vae.trainable_weights))
 
-        return total_loss, reco_loss, kl_loss, vod_loss
+        return total_loss, reco_loss, kl_loss
 
     wandb = initialize_wandb(args.dev, hyperparameters, timestring)
 
@@ -371,7 +360,6 @@ def main():
         epoch_total_loss = tf.keras.metrics.Mean()
         epoch_reco_loss = tf.keras.metrics.Mean()
         epoch_kl_loss = tf.keras.metrics.Mean()
-        epoch_vod_loss = tf.keras.metrics.Mean()
 
         if epoch < args.warmup_epochs:
             BETA = args.target_beta * (epoch / args.warmup_epochs)
@@ -379,11 +367,10 @@ def main():
             BETA = args.target_beta
 
         for x_batch in tqdm(train_dataset, desc="  Batch", leave=False):
-            total_loss, reco_loss, kl_loss, vod_loss = train_step(x_batch, BETA)
+            total_loss, reco_loss, kl_loss = train_step(x_batch, BETA)
             epoch_total_loss.update_state(total_loss)
             epoch_reco_loss.update_state(reco_loss)
             epoch_kl_loss.update_state(kl_loss)
-            epoch_vod_loss.update_state(vod_loss)
 
         val_pred_w_norm, val_pred_p_norm = vae(val_full_normalized, training=False)
         val_pred_w_flat = tf.reshape(val_pred_w_norm, [-1, weight_dim])
@@ -420,7 +407,6 @@ def main():
                     "epoch_total_loss": epoch_total_loss.result(),
                     "epoch_reconstruction_loss": epoch_reco_loss.result(),
                     "epoch_kl_loss": epoch_kl_loss.result(),
-                    "epoch_vod_loss": epoch_vod_loss.result(),
                     "val_mae": val_mae.numpy(),
                     "val_geo_mae": val_geo_mae.numpy(),
                 }

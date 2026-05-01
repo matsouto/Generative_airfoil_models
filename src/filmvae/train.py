@@ -21,14 +21,13 @@ from src.filmvae import FiLMCSTVariationalAutoencoder
 from src.scalers import AirfoilScaler
 from src.scalers import ConditionScaler
 from src.plotting import plot_original_and_reconstruction
-from src.utils import compute_vod_loss
 
 # ============================================================================
 # CONFIGURATION AND RANDOM SEEDS
 # ============================================================================
 
 SEED = 42
-AIRFOILS_TO_PLOT = 9
+AIRFOILS_TO_PLOT = 16
 CHECKPOINT_EPOCHS = 10
 VERBOSE = 1
 DEV = False
@@ -37,7 +36,7 @@ DEV = False
 # HYPERPARAMETERS
 # ============================================================================
 
-EPOCHS = 500
+EPOCHS = 150
 BATCH_SIZE = 32
 LATENT_DIM = 16
 NPV = 8
@@ -45,7 +44,7 @@ LEARNING_RATE = 1e-3
 CLIPNORM = 1.0
 WARMUP_EPOCHS = 100
 TARGET_BETA = 0.01
-SMOOTHNESS_WEIGHT = 0
+BETA_ANNEALING = "cyclical"
 CONDITION_COLUMNS = ("Cl", "alpha")
 
 TRAIN_DATASET = "train_filmvae_dataset_8.json"
@@ -80,7 +79,15 @@ def parse_args():
     parser.add_argument("--clipnorm", type=float, default=CLIPNORM)
     parser.add_argument("--warmup-epochs", type=int, default=WARMUP_EPOCHS)
     parser.add_argument("--target-beta", type=float, default=TARGET_BETA)
-    parser.add_argument("--smoothness-weight", type=float, default=SMOOTHNESS_WEIGHT)
+    parser.add_argument(
+        "--beta-annealing",
+        choices=["cyclical", "linear", "constant"],
+        default=BETA_ANNEALING,
+        help=(
+            "Beta annealing strategy. 'cyclical' repeats a warmup cycle, "
+            "'linear' performs a single warmup, and 'constant' keeps target beta fixed."
+        ),
+    )
     parser.add_argument(
         "--condition-columns",
         nargs=2,
@@ -103,10 +110,10 @@ def build_hyperparameters(args):
         "latent_dim": args.latent_dim,
         "learning_rate": args.learning_rate,
         "target_beta": args.target_beta,
+        "beta_annealing": args.beta_annealing,
         "warmup_epochs": args.warmup_epochs,
         "batch_size": args.batch_size,
         "clipnorm": args.clipnorm,
-        "smoothness_weight": args.smoothness_weight,
         "npv": args.npv,
         "seed": args.seed,
         "condition_columns": list(args.condition_columns),
@@ -199,6 +206,29 @@ def sample_validation_airfoils(airfoil_dataset, sample_size, random_state=None):
     ).reset_index(drop=True)
 
 
+def compute_beta(epoch, warmup_epochs, target_beta, annealing_type):
+    if target_beta <= 0:
+        return 0.0
+
+    if annealing_type == "constant":
+        return target_beta
+
+    if warmup_epochs <= 0:
+        return target_beta
+
+    if annealing_type == "linear":
+        progress = min(epoch + 1, warmup_epochs) / warmup_epochs
+        return target_beta * progress
+
+    if annealing_type == "cyclical":
+        cycle_epoch = epoch % warmup_epochs
+        ramp_epochs = max(1, int(np.ceil(warmup_epochs * 0.5)))
+        progress = min(cycle_epoch + 1, ramp_epochs) / ramp_epochs
+        return target_beta * progress
+
+    raise ValueError(f"Unsupported beta annealing type: {annealing_type}")
+
+
 def build_model(model_name, scaler, npv, latent_dim):
     model_class = MODEL_REGISTRY[model_name]
     return model_class(
@@ -225,6 +255,38 @@ def initialize_wandb(dev_mode, hyperparameters, timestring):
     return wandb
 
 
+def apply_wandb_overrides(args, wandb_module):
+    if wandb_module is None:
+        return args
+
+    config = wandb_module.config
+    override_fields = {
+        "epochs",
+        "batch_size",
+        "latent_dim",
+        "npv",
+        "learning_rate",
+        "clipnorm",
+        "warmup_epochs",
+        "target_beta",
+        "beta_annealing",
+        "seed",
+        "airfoils_to_plot",
+        "checkpoint_epochs",
+        "verbose",
+        "condition_columns",
+    }
+
+    for field_name in override_fields:
+        if field_name in config:
+            setattr(args, field_name, config[field_name])
+
+    if isinstance(args.condition_columns, tuple):
+        args.condition_columns = list(args.condition_columns)
+
+    return args
+
+
 def save_scalers(scaler, condition_scaler, condition_columns, scaler_path):
     with open(os.path.join(scaler_path, "scaler.pkl"), "wb") as scaler_file:
         pickle.dump(scaler, scaler_file)
@@ -241,8 +303,12 @@ def save_scalers(scaler, condition_scaler, condition_columns, scaler_path):
 def main():
     args = parse_args()
     timestring = time.strftime("%Y%m%d-%H%M%S")
-    set_random_seeds(args.seed)
     hyperparameters = build_hyperparameters(args)
+    wandb = initialize_wandb(args.dev, hyperparameters, timestring)
+    args = apply_wandb_overrides(args, wandb)
+    if wandb is not None:
+        wandb.config.update(build_hyperparameters(args), allow_val_change=True)
+    set_random_seeds(args.seed)
 
     # ============================================================================
     # DATASET LOADING AND PREPARATION
@@ -369,20 +435,12 @@ def main():
             reco_loss = loss_weights + loss_params
 
             kl_loss = tf.add_n(vae.losses) if vae.losses else tf.constant(0.0)
-            pred_coords_norm = vae.decoder.cst_transform(pred_weights, pred_params)
-            y_pred_coords_norm = pred_coords_norm[:, :, 1]
-            vod_loss = compute_vod_loss(y_pred_coords_norm)
-
-            total_loss = (
-                reco_loss + (beta * kl_loss) + (args.smoothness_weight * vod_loss)
-            )
+            total_loss = reco_loss + (beta * kl_loss)
 
         grads = tape.gradient(total_loss, vae.trainable_weights)
         optimizer.apply_gradients(zip(grads, vae.trainable_weights))
 
-        return total_loss, reco_loss, kl_loss, vod_loss
-
-    wandb = initialize_wandb(args.dev, hyperparameters, timestring)
+        return total_loss, reco_loss, kl_loss
 
     models_path = PROJECT_PATH / "models" / args.model / timestring / "weights"
     scaler_path = PROJECT_PATH / "models" / args.model / timestring / "scaler"
@@ -440,12 +498,19 @@ def main():
     print(f"  Learning Rate:     {args.learning_rate}")
     print(f"  Warmup Epochs:     {args.warmup_epochs}")
     print(f"  Target Beta:       {args.target_beta}")
+    print(f"  Beta Annealing:    {args.beta_annealing}")
     print(f"  Condition Columns: {condition_columns}")
     print(
         f"  Dev Mode:          {'ON (WandB disabled)' if args.dev else 'OFF (WandB enabled)'}"
     )
 
-    input("\nPress Enter to start training...\n")
+    if sys.stdin is not None and sys.stdin.isatty():
+        try:
+            input("\nPress Enter to start training...\n")
+        except EOFError:
+            print("\nNon-interactive stdin detected. Starting training automatically...")
+    else:
+        print("\nNon-interactive run detected. Starting training automatically...")
 
     print("\n" + "=" * 70)
     print("STARTING TRAINING")
@@ -458,19 +523,20 @@ def main():
         epoch_total_loss = tf.keras.metrics.Mean()
         epoch_reco_loss = tf.keras.metrics.Mean()
         epoch_kl_loss = tf.keras.metrics.Mean()
-        epoch_vod_loss = tf.keras.metrics.Mean()
 
-        if epoch < args.warmup_epochs:
-            beta = args.target_beta * (epoch / args.warmup_epochs)
-        else:
-            beta = args.target_beta
+        beta = compute_beta(
+            epoch,
+            args.warmup_epochs,
+            args.target_beta,
+            args.beta_annealing,
+        )
 
         for geometry_batch, condition_batch in tqdm(
             train_dataset,
             desc="  Batch",
             leave=False,
         ):
-            total_loss, reco_loss, kl_loss, vod_loss = train_step(
+            total_loss, reco_loss, kl_loss = train_step(
                 geometry_batch,
                 condition_batch,
                 beta,
@@ -478,7 +544,6 @@ def main():
             epoch_total_loss.update_state(total_loss)
             epoch_reco_loss.update_state(reco_loss)
             epoch_kl_loss.update_state(kl_loss)
-            epoch_vod_loss.update_state(vod_loss)
 
         val_pred_w_norm, val_pred_p_norm = vae(
             (val_full_normalized_geometry, val_full_normalized_condition),
@@ -520,7 +585,6 @@ def main():
                     "epoch_total_loss": epoch_total_loss.result(),
                     "epoch_reconstruction_loss": epoch_reco_loss.result(),
                     "epoch_kl_loss": epoch_kl_loss.result(),
-                    "epoch_vod_loss": epoch_vod_loss.result(),
                     "val_mae": val_mae.numpy(),
                     "val_geo_mae": val_geo_mae.numpy(),
                 }
