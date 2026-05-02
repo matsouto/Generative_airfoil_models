@@ -220,13 +220,13 @@ def compute_beta(epoch, warmup_epochs, target_beta, annealing_type):
         return target_beta
 
     if annealing_type == "linear":
-        progress = min(epoch + 1, warmup_epochs) / warmup_epochs
+        progress = min(epoch, warmup_epochs) / warmup_epochs
         return target_beta * progress
 
     if annealing_type == "cyclical":
         cycle_epoch = epoch % warmup_epochs
         ramp_epochs = max(1, int(np.ceil(warmup_epochs * 0.5)))
-        progress = min(cycle_epoch + 1, ramp_epochs) / ramp_epochs
+        progress = min(cycle_epoch, ramp_epochs) / ramp_epochs
         return target_beta * progress
 
     raise ValueError(f"Unsupported beta annealing type: {annealing_type}")
