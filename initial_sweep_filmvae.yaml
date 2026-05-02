@@ -17,8 +17,10 @@ parameters:
     max: 0.005
   clipnorm:
     values: [0.5, 1.0, 2.0]
+  weight_decay:
+    values: [0.0, 1.0e-5, 1.0e-4]
   warmup_epochs:
-    values: [25, 50, 100]
+    values: [5, 10, 15]
   target_beta:
     values: [0.001, 0.005, 0.01, 0.02]
   beta_annealing:

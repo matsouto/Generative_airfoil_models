@@ -42,6 +42,7 @@ LATENT_DIM = 16
 NPV = 8
 LEARNING_RATE = 1e-3
 CLIPNORM = 1.0
+WEIGHT_DECAY = 0.0
 WARMUP_EPOCHS = 100
 TARGET_BETA = 0.01
 BETA_ANNEALING = "cyclical"
@@ -77,6 +78,7 @@ def parse_args():
     parser.add_argument("--npv", type=int, default=NPV)
     parser.add_argument("--learning-rate", type=float, default=LEARNING_RATE)
     parser.add_argument("--clipnorm", type=float, default=CLIPNORM)
+    parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY)
     parser.add_argument("--warmup-epochs", type=int, default=WARMUP_EPOCHS)
     parser.add_argument("--target-beta", type=float, default=TARGET_BETA)
     parser.add_argument(
@@ -109,6 +111,7 @@ def build_hyperparameters(args):
         "epochs": args.epochs,
         "latent_dim": args.latent_dim,
         "learning_rate": args.learning_rate,
+        "weight_decay": args.weight_decay,
         "target_beta": args.target_beta,
         "beta_annealing": args.beta_annealing,
         "warmup_epochs": args.warmup_epochs,
@@ -267,6 +270,7 @@ def apply_wandb_overrides(args, wandb_module):
         "npv",
         "learning_rate",
         "clipnorm",
+        "weight_decay",
         "warmup_epochs",
         "target_beta",
         "beta_annealing",
@@ -410,10 +414,17 @@ def main():
         npv=args.npv,
         latent_dim=args.latent_dim,
     )
-    optimizer = tf.keras.optimizers.Adam(
-        learning_rate=args.learning_rate,
-        clipnorm=args.clipnorm,
-    )
+    optimizer_kwargs = {
+        "learning_rate": args.learning_rate,
+        "clipnorm": args.clipnorm,
+    }
+    if args.weight_decay > 0:
+        optimizer = tf.keras.optimizers.AdamW(
+            weight_decay=args.weight_decay,
+            **optimizer_kwargs,
+        )
+    else:
+        optimizer = tf.keras.optimizers.Adam(**optimizer_kwargs)
 
     # ============================================================================
     # TRAINING STEP FUNCTION
@@ -508,7 +519,9 @@ def main():
         try:
             input("\nPress Enter to start training...\n")
         except EOFError:
-            print("\nNon-interactive stdin detected. Starting training automatically...")
+            print(
+                "\nNon-interactive stdin detected. Starting training automatically..."
+            )
     else:
         print("\nNon-interactive run detected. Starting training automatically...")
 
