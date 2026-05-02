@@ -102,6 +102,11 @@ def parse_args():
     parser.add_argument("--checkpoint-epochs", type=int, default=CHECKPOINT_EPOCHS)
     parser.add_argument("--verbose", type=int, choices=[0, 1], default=VERBOSE)
     parser.add_argument("--dev", action="store_true", default=DEV)
+    parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Disable saving checkpoints, scalers, and reconstruction images for sweep runs.",
+    )
     return parser.parse_args()
 
 
@@ -456,14 +461,18 @@ def main():
     models_path = PROJECT_PATH / "models" / args.model / timestring / "weights"
     scaler_path = PROJECT_PATH / "models" / args.model / timestring / "scaler"
     images_path = PROJECT_PATH / "models" / args.model / timestring / "images"
-    os.makedirs(models_path, exist_ok=True)
-    os.makedirs(scaler_path, exist_ok=True)
-    os.makedirs(images_path, exist_ok=True)
+    if not args.sweep:
+        os.makedirs(models_path, exist_ok=True)
+        os.makedirs(scaler_path, exist_ok=True)
+        os.makedirs(images_path, exist_ok=True)
     print("\n" + "=" * 70)
     print("OUTPUT CONFIGURATION")
     print("=" * 70)
-    print(f"✓ Model checkpoints: {models_path}")
-    print(f"✓ Visualizations:    {images_path}")
+    if args.sweep:
+        print("✓ Sweep mode: output artifacts disabled")
+    else:
+        print(f"✓ Model checkpoints: {models_path}")
+        print(f"✓ Visualizations:    {images_path}")
 
     print("Preparing full validation tensors for metrics...")
     val_full_geometry = build_airfoil_matrix(validation_airfoil_dataset)
@@ -530,7 +539,8 @@ def main():
     print("=" * 70 + "\n")
 
     start_time = time.time()
-    save_scalers(vae.scaler, condition_scaler, condition_columns, scaler_path)
+    if not args.sweep:
+        save_scalers(vae.scaler, condition_scaler, condition_columns, scaler_path)
 
     for epoch in range(args.epochs):
         epoch_total_loss = tf.keras.metrics.Mean()
@@ -603,7 +613,7 @@ def main():
                 }
             )
 
-        if (epoch + 1) % args.checkpoint_epochs == 0:
+        if not args.sweep and (epoch + 1) % args.checkpoint_epochs == 0:
             reco_weights_norm, reco_params_norm = vae(
                 (validation_geometry, validation_condition),
                 training=False,

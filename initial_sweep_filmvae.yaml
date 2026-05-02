@@ -31,3 +31,4 @@ command:
   - run
   - python
   - ${program}
+  - --sweep
