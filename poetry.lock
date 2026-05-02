@@ -1026,6 +1026,7 @@ psutil = ">=7"
 pygments = ">=2.14.0"
 stack_data = ">=0.6.0"
 traitlets = ">=5.13.0"
+typing_extensions = {version = ">=4.6", markers = "python_version < \"3.12\""}
 
 [package.extras]
 all = ["argcomplete (>=3.0)", "ipython[doc,matplotlib,terminal,test,test-extra]", "types-decorator"]
@@ -1506,6 +1507,7 @@ files = [
 numpy = [
     {version = ">=2.1.0", markers = "python_version >= \"3.13\""},
     {version = ">=1.26.0", markers = "python_version == \"3.12\""},
+    {version = ">=1.23.3", markers = "python_version == \"3.11\""},
 ]
 
 [package.extras]
@@ -3471,5 +3473,5 @@ dev = ["pytest", "setuptools"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.12"
-content-hash = "ee3e6344cdc11ac70c50a9a69e0e7b2fb97e2e697b36c6f0aee5c7055f729d3f"
+python-versions = ">=3.11"
+content-hash = "4f34c266c15f1c69c06f07d2400a8437172983dca3193cbbab2f138e8fed8d19"
