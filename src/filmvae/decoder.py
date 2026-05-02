@@ -2,30 +2,32 @@ import tensorflow as tf
 from tensorflow.keras.layers import Add, Dense, LeakyReLU, Multiply, Reshape
 
 from ..layers.cst_layer import CSTLayer
+from .encoder import DEFAULT_FILM_HIDDEN_DIMS
 
 
 class FiLMDecoder(tf.keras.Model):
     """Decoder that reconstructs CST geometry conditioned by Cl and alpha via FiLM."""
 
-    def __init__(self, npv=8, latent_dim=16):
+    def __init__(self, npv=8, latent_dim=16, film_depth=2):
         super().__init__()
         self.npv = npv
         self.latent_dim = latent_dim
         self.num_weights = 2 * self.npv
+        if film_depth < 1 or film_depth > len(DEFAULT_FILM_HIDDEN_DIMS):
+            raise ValueError(
+                f"film_depth must be between 1 and {len(DEFAULT_FILM_HIDDEN_DIMS)}, got {film_depth}."
+            )
+        self.film_depth = film_depth
+        self.hidden_dims = tuple(reversed(DEFAULT_FILM_HIDDEN_DIMS[:film_depth]))
 
-        self.latent_dense1 = Dense(512)
-        self.gamma1 = Dense(512)
-        self.beta1 = Dense(512)
-        self.multiply1 = Multiply()
-        self.add1 = Add()
-        self.act1 = LeakyReLU(negative_slope=0.2)
-
-        self.latent_dense2 = Dense(256)
-        self.gamma2 = Dense(256)
-        self.beta2 = Dense(256)
-        self.multiply2 = Multiply()
-        self.add2 = Add()
-        self.act2 = LeakyReLU(negative_slope=0.2)
+        self.latent_dense_layers = [Dense(width) for width in self.hidden_dims]
+        self.gamma_layers = [Dense(width) for width in self.hidden_dims]
+        self.beta_layers = [Dense(width) for width in self.hidden_dims]
+        self.multiply_layers = [Multiply() for _ in self.hidden_dims]
+        self.add_layers = [Add() for _ in self.hidden_dims]
+        self.activation_layers = [
+            LeakyReLU(negative_slope=0.2) for _ in self.hidden_dims
+        ]
 
         self.dense_weights = Dense(self.num_weights, activation="tanh")
         self.reshape_weights = Reshape((2, self.npv))
@@ -40,20 +42,21 @@ class FiLMDecoder(tf.keras.Model):
             )
 
         latent_shape, condition_shape = input_shape
-        hidden1_shape = tf.TensorShape([None, 512])
-        hidden2_shape = tf.TensorShape([None, 256])
+        current_shape = latent_shape
+        for dense_layer, gamma_layer, beta_layer, width in zip(
+            self.latent_dense_layers,
+            self.gamma_layers,
+            self.beta_layers,
+            self.hidden_dims,
+        ):
+            dense_layer.build(current_shape)
+            gamma_layer.build(condition_shape)
+            beta_layer.build(condition_shape)
+            current_shape = tf.TensorShape([None, width])
 
-        self.latent_dense1.build(latent_shape)
-        self.gamma1.build(condition_shape)
-        self.beta1.build(condition_shape)
-
-        self.latent_dense2.build(hidden1_shape)
-        self.gamma2.build(condition_shape)
-        self.beta2.build(condition_shape)
-
-        self.dense_weights.build(hidden2_shape)
+        self.dense_weights.build(current_shape)
         self.reshape_weights.build(tf.TensorShape([None, self.num_weights]))
-        self.dense_params.build(hidden2_shape)
+        self.dense_params.build(current_shape)
 
         self.cst_transform(
             tf.zeros((1, 2, self.npv), dtype=tf.float32),
@@ -88,27 +91,32 @@ class FiLMDecoder(tf.keras.Model):
         del training
         latent, condition = self._split_inputs(inputs)
 
-        x = self.latent_dense1(latent)
-        x = self._apply_film(
-            x,
-            condition,
-            self.gamma1,
-            self.beta1,
-            self.multiply1,
-            self.add1,
-            self.act1,
-        )
-
-        x = self.latent_dense2(x)
-        x = self._apply_film(
-            x,
-            condition,
-            self.gamma2,
-            self.beta2,
-            self.multiply2,
-            self.add2,
-            self.act2,
-        )
+        x = latent
+        for (
+            dense_layer,
+            gamma_layer,
+            beta_layer,
+            multiply_layer,
+            add_layer,
+            activation_layer,
+        ) in zip(
+            self.latent_dense_layers,
+            self.gamma_layers,
+            self.beta_layers,
+            self.multiply_layers,
+            self.add_layers,
+            self.activation_layers,
+        ):
+            x = dense_layer(x)
+            x = self._apply_film(
+                x,
+                condition,
+                gamma_layer,
+                beta_layer,
+                multiply_layer,
+                add_layer,
+                activation_layer,
+            )
 
         weights_flat = self.dense_weights(x)
         weights = self.reshape_weights(weights_flat)
@@ -122,7 +130,7 @@ if __name__ == "__main__":
     NPV = 8
     LATENT_DIM = 16
 
-    decoder = FiLMDecoder(npv=NPV, latent_dim=LATENT_DIM)
+    decoder = FiLMDecoder(npv=NPV, latent_dim=LATENT_DIM, film_depth=2)
 
     dummy_latent = tf.random.normal([BATCH_SIZE, LATENT_DIM])
     dummy_condition = tf.random.uniform([BATCH_SIZE, 2], minval=-1.0, maxval=1.0)

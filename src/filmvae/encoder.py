@@ -1,30 +1,32 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Add, Dense, Flatten, LeakyReLU, Multiply
 
+DEFAULT_FILM_HIDDEN_DIMS = (256, 512, 512, 512)
+
 
 class FiLMEncoder(tf.keras.Model):
     """Encoder that modulates geometry features with a 2D condition via FiLM."""
 
-    def __init__(self, npv=8, latent_dim=16):
+    def __init__(self, npv=8, latent_dim=16, film_depth=2):
         super().__init__()
         self.npv = npv
         self.latent_dim = latent_dim
+        if film_depth < 1 or film_depth > len(DEFAULT_FILM_HIDDEN_DIMS):
+            raise ValueError(
+                f"film_depth must be between 1 and {len(DEFAULT_FILM_HIDDEN_DIMS)}, got {film_depth}."
+            )
+        self.film_depth = film_depth
+        self.hidden_dims = DEFAULT_FILM_HIDDEN_DIMS[:film_depth]
 
         self.flatten = Flatten()
-
-        self.geom_dense1 = Dense(256)
-        self.gamma1 = Dense(256)
-        self.beta1 = Dense(256)
-        self.multiply1 = Multiply()
-        self.add1 = Add()
-        self.act1 = LeakyReLU(negative_slope=0.2)
-
-        self.geom_dense2 = Dense(512)
-        self.gamma2 = Dense(512)
-        self.beta2 = Dense(512)
-        self.multiply2 = Multiply()
-        self.add2 = Add()
-        self.act2 = LeakyReLU(negative_slope=0.2)
+        self.geom_dense_layers = [Dense(width) for width in self.hidden_dims]
+        self.gamma_layers = [Dense(width) for width in self.hidden_dims]
+        self.beta_layers = [Dense(width) for width in self.hidden_dims]
+        self.multiply_layers = [Multiply() for _ in self.hidden_dims]
+        self.add_layers = [Add() for _ in self.hidden_dims]
+        self.activation_layers = [
+            LeakyReLU(negative_slope=0.2) for _ in self.hidden_dims
+        ]
 
         self.dense_mean = Dense(self.latent_dim, name="z_mean")
         self.dense_log_var = Dense(self.latent_dim, name="z_log_var")
@@ -57,27 +59,31 @@ class FiLMEncoder(tf.keras.Model):
 
         x = self.flatten(geometry)
 
-        x = self.geom_dense1(x)
-        x = self._apply_film(
-            x,
-            condition,
-            self.gamma1,
-            self.beta1,
-            self.multiply1,
-            self.add1,
-            self.act1,
-        )
-
-        x = self.geom_dense2(x)
-        x = self._apply_film(
-            x,
-            condition,
-            self.gamma2,
-            self.beta2,
-            self.multiply2,
-            self.add2,
-            self.act2,
-        )
+        for (
+            dense_layer,
+            gamma_layer,
+            beta_layer,
+            multiply_layer,
+            add_layer,
+            activation_layer,
+        ) in zip(
+            self.geom_dense_layers,
+            self.gamma_layers,
+            self.beta_layers,
+            self.multiply_layers,
+            self.add_layers,
+            self.activation_layers,
+        ):
+            x = dense_layer(x)
+            x = self._apply_film(
+                x,
+                condition,
+                gamma_layer,
+                beta_layer,
+                multiply_layer,
+                add_layer,
+                activation_layer,
+            )
 
         z_mean = self.dense_mean(x)
         z_log_var = self.dense_log_var(x)
@@ -90,7 +96,7 @@ if __name__ == "__main__":
     NPV = 8
     LATENT_DIM = 16
 
-    encoder = FiLMEncoder(npv=NPV, latent_dim=LATENT_DIM)
+    encoder = FiLMEncoder(npv=NPV, latent_dim=LATENT_DIM, film_depth=2)
 
     dummy_geometry = tf.random.normal([BATCH_SIZE, (2 * NPV) + 2])
     dummy_condition = tf.random.uniform([BATCH_SIZE, 2], minval=-1.0, maxval=1.0)

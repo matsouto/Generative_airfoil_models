@@ -39,6 +39,7 @@ DEV = False
 EPOCHS = 150
 BATCH_SIZE = 32
 LATENT_DIM = 16
+FILM_DEPTH = 2
 NPV = 8
 LEARNING_RATE = 1e-3
 CLIPNORM = 1.0
@@ -47,6 +48,7 @@ WARMUP_EPOCHS = 100
 TARGET_BETA = 0.01
 BETA_ANNEALING = "cyclical"
 CONDITION_COLUMNS = ("Cl", "alpha")
+ACTIVE_UNITS_THRESHOLD = 1e-2
 
 TRAIN_DATASET = "train_filmvae_dataset_8.json"
 VALIDATION_DATASET = "val_filmvae_dataset_8.json"
@@ -75,6 +77,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=EPOCHS)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--latent-dim", type=int, default=LATENT_DIM)
+    parser.add_argument("--film-depth", type=int, choices=[2, 3, 4], default=FILM_DEPTH)
     parser.add_argument("--npv", type=int, default=NPV)
     parser.add_argument("--learning-rate", type=float, default=LEARNING_RATE)
     parser.add_argument("--clipnorm", type=float, default=CLIPNORM)
@@ -115,6 +118,7 @@ def build_hyperparameters(args):
         "model": args.model,
         "epochs": args.epochs,
         "latent_dim": args.latent_dim,
+        "film_depth": args.film_depth,
         "learning_rate": args.learning_rate,
         "weight_decay": args.weight_decay,
         "target_beta": args.target_beta,
@@ -237,13 +241,23 @@ def compute_beta(epoch, warmup_epochs, target_beta, annealing_type):
     raise ValueError(f"Unsupported beta annealing type: {annealing_type}")
 
 
-def build_model(model_name, scaler, npv, latent_dim):
+def build_model(model_name, scaler, npv, latent_dim, film_depth):
     model_class = MODEL_REGISTRY[model_name]
     return model_class(
         scaler,
         npv=npv,
         latent_dim=latent_dim,
+        film_depth=film_depth,
     )
+
+
+def compute_active_units(z_mean, threshold=ACTIVE_UNITS_THRESHOLD):
+    latent_variances = tf.math.reduce_variance(z_mean, axis=0)
+    active_units = tf.reduce_sum(
+        tf.cast(latent_variances > threshold, tf.float32),
+        axis=0,
+    )
+    return active_units, latent_variances
 
 
 def initialize_wandb(dev_mode, hyperparameters, timestring):
@@ -272,6 +286,7 @@ def apply_wandb_overrides(args, wandb_module):
         "epochs",
         "batch_size",
         "latent_dim",
+        "film_depth",
         "npv",
         "learning_rate",
         "clipnorm",
@@ -418,6 +433,7 @@ def main():
         scaler,
         npv=args.npv,
         latent_dim=args.latent_dim,
+        film_depth=args.film_depth,
     )
     optimizer_kwargs = {
         "learning_rate": args.learning_rate,
@@ -515,6 +531,7 @@ def main():
     print(f"  Epochs:            {args.epochs}")
     print(f"  Batch Size:        {args.batch_size}")
     print(f"  Latent Dim:        {args.latent_dim}")
+    print(f"  FiLM Depth:        {args.film_depth}")
     print(f"  Learning Rate:     {args.learning_rate}")
     print(f"  Warmup Epochs:     {args.warmup_epochs}")
     print(f"  Target Beta:       {args.target_beta}")
@@ -572,6 +589,11 @@ def main():
             (val_full_normalized_geometry, val_full_normalized_condition),
             training=False,
         )
+        val_z_mean, _ = vae.encoder(
+            (val_full_normalized_geometry, val_full_normalized_condition),
+            training=False,
+        )
+        active_units, latent_variances = compute_active_units(val_z_mean)
         val_pred_w_flat = tf.reshape(val_pred_w_norm, [-1, weight_dim])
         val_pred_geometry = tf.concat([val_pred_w_flat, val_pred_p_norm], axis=1)
         val_mae = tf.reduce_mean(
@@ -597,6 +619,7 @@ def main():
                 f"KL: {epoch_kl_loss.result():.5f} | "
                 f"W-MAE: {val_mae:.5f} | "
                 f"Geo-MAE: {val_geo_mae:.5f} | "
+                f"Active Units: {active_units:.0f} | "
                 f"Beta: {beta:.4f} | "
                 f"Time: {elapsed_time:7.1f}s"
             )
@@ -610,6 +633,11 @@ def main():
                     "epoch_kl_loss": epoch_kl_loss.result(),
                     "val_mae": val_mae.numpy(),
                     "val_geo_mae": val_geo_mae.numpy(),
+                    "active_units": active_units.numpy(),
+                    "latent_variance_mean": tf.reduce_mean(
+                        latent_variances,
+                        axis=0,
+                    ).numpy(),
                 }
             )
 

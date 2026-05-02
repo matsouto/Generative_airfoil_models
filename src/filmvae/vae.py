@@ -15,15 +15,18 @@ class FiLMCSTVariationalAutoencoder(tf.keras.Model):
         scaler: AirfoilScaler,
         npv=8,
         latent_dim=16,
+        film_depth=2,
     ):
         super().__init__()
         self.encoder = FiLMEncoder(
             npv=npv,
             latent_dim=latent_dim,
+            film_depth=film_depth,
         )
         self.decoder = FiLMDecoder(
             npv=npv,
             latent_dim=latent_dim,
+            film_depth=film_depth,
         )
         self.sampling = SamplingLayer()
         self.scaler = scaler
@@ -61,6 +64,7 @@ if __name__ == "__main__":
         scaler=scaler,
         npv=NPV,
         latent_dim=LATENT_DIM,
+        film_depth=2,
     )
 
     dummy_geometry = tf.random.normal([BATCH_SIZE, (2 * NPV) + 2])
