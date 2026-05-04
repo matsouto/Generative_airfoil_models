@@ -14,6 +14,8 @@ dependencies = [
     "nbformat (>=5.10.4,<6.0.0)",
     "wandb (>=0.26.1,<0.27.0)",
     "dotenv (>=0.9.9,<0.10.0)",
+    "joblib (>=1.5.3,<2.0.0)",
+    "scikit-learn (>=1.8.0,<2.0.0)",
 ]
 
 [tool.poetry]
