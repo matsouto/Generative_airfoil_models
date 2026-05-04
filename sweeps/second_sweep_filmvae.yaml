@@ -6,7 +6,7 @@ metric:
   goal: minimize
 parameters:
   epochs:
-    value: 150
+    value: 100
   batch_size:
     value: 32
   latent_dim:

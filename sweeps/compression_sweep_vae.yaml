@@ -1,0 +1,38 @@
+project: CSTVAE
+program: src/vae/train.py
+method: bayes
+metric:
+  name: val_geo_mae
+  goal: minimize
+parameters:
+  model:
+    values: [cstvae, convcstvae]
+  epochs:
+    value: 100
+  batch_size:
+    value: 32
+  latent_dim:
+    values: [8, 10, 12]
+  learning_rate:
+    value: 0.001
+  clipnorm:
+    value: 1.0
+  weight_decay:
+    value: 1.0e-5
+  warmup_epochs:
+    distribution: uniform
+    min: 10
+    max: 100
+  target_beta:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.03
+  beta_annealing:
+    value: linear
+command:
+  - ${env}
+  - poetry
+  - run
+  - python
+  - ${program}
+  - --sweep
