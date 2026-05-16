@@ -12,7 +12,7 @@ parameters:
   batch_size:
     value: 32
   latent_dim:
-    values: [8, 10, 12]
+    values: [8, 10]
   learning_rate:
     value: 0.001
   clipnorm:
@@ -24,11 +24,11 @@ parameters:
     min: 10
     max: 100
   target_beta:
-    distribution: log_uniform_values
-    min: 0.0001
+    distribution: uniform
+    min: 0.02
     max: 0.03
   beta_annealing:
-    value: linear
+    values: [cyclical, linear, constant]
 command:
   - ${env}
   - poetry
