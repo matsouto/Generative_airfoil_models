@@ -32,8 +32,10 @@ class Decoder(tf.keras.Model):  # type: ignore
         self.dense_weights = Dense(self.num_weights, activation="tanh")
         self.reshape_weights = Reshape((2, self.npv))
 
-        # Head 2: Parameters (Range -1 to 1 via Linear)
-        self.dense_params = Dense(2)
+        # Head 2: Parameters (Range -1 to 1 via Tanh)
+        self.dense_params = Dense(
+            2, activation="tanh"
+        )  # 2 parameters: thickness and camber
 
         # CST Layer for coordinate generation (Same as before)
         self.cst_transform = CSTLayer(num_weights=self.npv)
