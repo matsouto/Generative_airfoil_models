@@ -1,0 +1,34 @@
+project: CSTVAE
+program: src/vae/train.py
+method: grid
+metric:
+  name: val_geo_mae
+  goal: minimize
+parameters:
+  model:
+    values: [cstvae, convcstvae]
+  epochs:
+    value: 100
+  batch_size:
+    value: 32
+  latent_dim:
+    values: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+  learning_rate:
+    value: 0.001
+  clipnorm:
+    value: 1.0
+  weight_decay:
+    value: 1.0e-5
+  warmup_epochs:
+    value: 72
+  target_beta:
+    value: 0.0259
+  beta_annealing:
+    value: linear
+command:
+  - ${env}
+  - poetry
+  - run
+  - python
+  - ${program}
+  - --sweep
