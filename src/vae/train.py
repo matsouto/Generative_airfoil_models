@@ -28,7 +28,7 @@ from src.vae import CSTVariationalAutoencoder
 
 SEED = 42
 AIRFOILS_TO_PLOT = 16
-CHECKPOINT_EPOCHS = 10
+CHECKPOINT_EPOCHS = 1
 VERBOSE = 1
 DEV = False
 
@@ -36,16 +36,16 @@ DEV = False
 # HYPERPARAMETERS
 # ============================================================================
 
-EPOCHS = 150
+EPOCHS = 100
 BATCH_SIZE = 32
-LATENT_DIM = 16
+LATENT_DIM = 10
 NPV = 8
 LEARNING_RATE = 1e-3
 CLIPNORM = 1.0
-WEIGHT_DECAY = 0.0
-WARMUP_EPOCHS = 100
-TARGET_BETA = 0.01
-BETA_ANNEALING = "cyclical"
+WEIGHT_DECAY = 1e-5
+WARMUP_EPOCHS = 72
+TARGET_BETA = 0.0259
+BETA_ANNEALING = "linear"
 ACTIVE_UNITS_THRESHOLD = 1e-2
 
 TRAIN_DATASET = "train_kulfan_dataset_8.json"

@@ -24,10 +24,10 @@ from src.vae.vae import CSTVariationalAutoencoder
 # ============================================================================
 # 1. CONFIGURATION
 # ============================================================================
-RUN_ID = "20260221-165429"  # Folder ID for the trained model
-EPOCH = 500  # Epoch checkpoint to load
-NPV = 12  # Number of CST parameters per side
-LATENT_DIM = 16  # Latent space dimensions
+RUN_ID = "20260516-232746"  # Folder ID for the trained model
+EPOCH = 100  # Epoch checkpoint to load
+NPV = 8  # Number of CST parameters per side
+LATENT_DIM = 10  # Latent space dimensions
 
 MODELS_DIR = Path(project_root) / "models" / "cstvae" / RUN_ID
 WEIGHTS_PATH = MODELS_DIR / "weights" / f"vae_weights_epoch_{EPOCH}.weights.h5"
