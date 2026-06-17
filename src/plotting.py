@@ -7,6 +7,7 @@ from aerosandbox import Airfoil
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.animation as animation
 import plotly.graph_objects as go
+from matplotlib.lines import Line2D
 
 # --- Helper Functions (Internal) ---
 
@@ -75,12 +76,24 @@ def _plot_single_shape(
 
 
 def _finalize_plot(
-    text_label: str, save_path: Union[Path, str], filename: str, dpi: int, show: bool
+    text_label: str,
+    save_path: Union[Path, str],
+    filename: str,
+    dpi: int,
+    show: bool,
+    show_axes: bool = False,
+    xlabel: str = "x/c",
+    ylabel: str = "y/c",
 ):
-    plt.xticks([])
-    plt.yticks([])
-    plt.axis("off")
-    plt.axis("equal")
+    if show_axes:
+        plt.axis("equal")
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+    else:
+        plt.xticks([])
+        plt.yticks([])
+        plt.axis("off")
+        plt.axis("equal")
 
     # Reserve bottom space for text label (rect format: [left, bottom, right, top])
     plt.tight_layout(rect=[0, 0.05, 1, 1])
@@ -149,14 +162,18 @@ def save_latent_walk_gif(
     interpolated_batch = tf.concat(interpolated_vectors, axis=0)
 
     # Decode and transform to physical airfoil coordinates
+    weight_dim = 2 * vae_model.decoder.npv
     pred_weights_norm, pred_params_norm = vae_model.decoder(interpolated_batch)
-    pred_weights_flat = tf.reshape(pred_weights_norm, [-1, 24])
+    pred_weights_flat = tf.reshape(pred_weights_norm, [-1, weight_dim])
 
     w_phys, p_phys = vae_model.scaler.inverse_transform(
         pred_weights_flat.numpy(), pred_params_norm.numpy()
     )
 
-    w_phys_t = tf.reshape(tf.convert_to_tensor(w_phys, dtype=tf.float32), [-1, 2, 12])
+    w_phys_t = tf.reshape(
+        tf.convert_to_tensor(w_phys, dtype=tf.float32),
+        [-1, 2, vae_model.decoder.npv],
+    )
     p_phys_t = tf.convert_to_tensor(p_phys, dtype=tf.float32)
     morphing_coords = vae_model.decoder.cst_transform(w_phys_t, p_phys_t).numpy()
 
@@ -266,6 +283,12 @@ def plot_latent_walk(
         # Update text_label above if title override is desired
         kwargs.pop("title")
 
+    dpi = kwargs.pop("dpi", 100)
+    show_axes = kwargs.pop("show_axes", False)
+    show_grid = kwargs.pop("show_grid", True)
+    xlabel = kwargs.pop("xlabel", "x/c")
+    ylabel = kwargs.pop("ylabel", "y/c")
+
     # Extract and validate latent vectors
     z1 = start_point[0] if isinstance(start_point, (list, tuple)) else start_point
     z2 = end_point[0] if isinstance(end_point, (list, tuple)) else end_point
@@ -289,14 +312,18 @@ def plot_latent_walk(
     interpolated_batch = tf.concat(interpolated_vectors, axis=0)
 
     # Decode and transform to physical airfoil coordinates
+    weight_dim = 2 * vae_model.decoder.npv
     pred_weights_norm, pred_params_norm = vae_model.decoder(interpolated_batch)
-    pred_weights_flat = tf.reshape(pred_weights_norm, [-1, 24])
+    pred_weights_flat = tf.reshape(pred_weights_norm, [-1, weight_dim])
 
     w_phys, p_phys = vae_model.scaler.inverse_transform(
         pred_weights_flat.numpy(), pred_params_norm.numpy()
     )
 
-    w_phys_t = tf.reshape(tf.convert_to_tensor(w_phys, dtype=tf.float32), [-1, 2, 12])
+    w_phys_t = tf.reshape(
+        tf.convert_to_tensor(w_phys, dtype=tf.float32),
+        [-1, 2, vae_model.decoder.npv],
+    )
     p_phys_t = tf.convert_to_tensor(p_phys, dtype=tf.float32)
     morphing_coords = vae_model.decoder.cst_transform(w_phys_t, p_phys_t).numpy()
 
@@ -356,10 +383,20 @@ def plot_latent_walk(
         cbar.ax.set_yticklabels([start_name, end_name])
         cbar.set_label("Morphing Progress")
 
-    ax.grid(True, alpha=0.3)
+    if show_grid:
+        ax.grid(True, alpha=0.3)
 
     # Finalize
-    _finalize_plot(text_label, save_path, filename, 100, show)
+    _finalize_plot(
+        text_label,
+        save_path,
+        filename,
+        dpi,
+        show,
+        show_axes=show_axes,
+        xlabel=xlabel,
+        ylabel=ylabel,
+    )
 
 
 def generate_and_plot_airfoils(
@@ -432,6 +469,9 @@ def plot_original_and_reconstruction(
     linestyle_original: str = "--",
     linestyle_reconstruction: str = "-",
     annotate: bool = False,
+    profile_labels: List[str] = None,
+    reconstruction_losses: List[float] = None,
+    reconstruction_loss_format: str = ".2e",
     **kwargs,
 ):
     """
@@ -441,12 +481,40 @@ def plot_original_and_reconstruction(
     for easy visual comparison of reconstruction quality.
     """
     num_items = min(len(originals), len(reconstructions))
+    show_legend = kwargs.pop("show_legend", False)
 
     fig, ax = plt.subplots(figsize=figsize)
     grid_points, grid_scale = _gen_grid(num_items)
     final_scale = scale * grid_scale
+    top_label_space = 0.0
+    bottom_label_space = 0.0
+    if reconstruction_losses is not None:
+        top_label_space = 0.12 * final_scale
+    if profile_labels is not None:
+        bottom_label_space = 0.12 * final_scale
+    x_min, y_min = np.inf, np.inf
+    x_max, y_max = -np.inf, -np.inf
 
     for i, pos in enumerate(grid_points):
+        original_coords = originals[i].coordinates * final_scale + pos
+        reconstruction_coords = reconstructions[i].coordinates * final_scale + pos
+        item_x_min = min(
+            np.min(original_coords[:, 0]), np.min(reconstruction_coords[:, 0])
+        )
+        item_y_min = min(
+            np.min(original_coords[:, 1]), np.min(reconstruction_coords[:, 1])
+        )
+        item_x_max = max(
+            np.max(original_coords[:, 0]), np.max(reconstruction_coords[:, 0])
+        )
+        item_y_max = max(
+            np.max(original_coords[:, 1]), np.max(reconstruction_coords[:, 1])
+        )
+        x_min = min(x_min, item_x_min)
+        y_min = min(y_min, item_y_min - bottom_label_space)
+        x_max = max(x_max, item_x_max)
+        y_max = max(y_max, item_y_max + top_label_space)
+
         # Plot Original (Dashed by default)
         _plot_single_shape(
             ax=ax,
@@ -479,7 +547,95 @@ def plot_original_and_reconstruction(
         if annotate:
             ax.annotate(f"{i+1}", xy=(pos[0], pos[1]), size=8)
 
-    _finalize_plot(text_label, save_path, filename, dpi, show)
+        item_x_center = 0.5 * (item_x_min + item_x_max)
+        if reconstruction_losses is not None and i < len(reconstruction_losses):
+            loss_text = format(float(reconstruction_losses[i]), reconstruction_loss_format)
+            ax.text(
+                item_x_center,
+                item_y_max + 0.045 * final_scale,
+                rf"$L_{{\mathrm{{reco}}}} = {loss_text}$",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+            )
+
+        if profile_labels is not None and i < len(profile_labels):
+            ax.text(
+                item_x_center,
+                item_y_min - 0.055 * final_scale,
+                str(profile_labels[i]),
+                ha="center",
+                va="top",
+                fontsize=7,
+            )
+
+    plt.xticks([])
+    plt.yticks([])
+    plt.axis("off")
+    plt.axis("equal")
+
+    x_pad = 0.03 * max(x_max - x_min, 1.0)
+    y_pad = 0.08 * max(y_max - y_min, 0.2)
+    ax.set_xlim(x_min - x_pad, x_max + x_pad)
+    ax.set_ylim(y_min - y_pad, y_max + y_pad)
+
+    data_width = (x_max - x_min) + 2 * x_pad
+    data_height = (y_max - y_min) + 2 * y_pad
+    target_width = figsize[0]
+    target_height = max(
+        2.8,
+        target_width * (data_height / max(data_width, 1e-6))
+        + (0.5 if show_legend else 0.0)
+        + (0.35 if text_label else 0.0),
+    )
+    fig.set_size_inches(target_width, target_height, forward=True)
+
+    bottom_margin = 0.03 if text_label else 0.012
+    top_margin = 0.88 if show_legend else 0.99
+    fig.subplots_adjust(left=0.015, right=0.985, bottom=bottom_margin, top=top_margin)
+
+    if show_legend:
+        handles = [
+            Line2D(
+                [0],
+                [0],
+                color=color_original,
+                linewidth=linewidth,
+                linestyle=linestyle_original,
+                label="Original",
+            ),
+            Line2D(
+                [0],
+                [0],
+                color=color_reconstruction,
+                linewidth=linewidth,
+                linestyle=linestyle_reconstruction,
+                label="Reconstruido",
+            ),
+        ]
+        fig.legend(
+            handles=handles,
+            loc="upper center",
+            ncol=2,
+            frameon=False,
+            bbox_to_anchor=(0.5, 0.985),
+        )
+
+    if text_label:
+        fig.text(
+            0.5, 0.006, text_label, ha="center", fontsize=8, fontfamily="monospace"
+        )
+
+    if save_path is not None and filename is not None:
+        Path(save_path).mkdir(parents=True, exist_ok=True)
+        fig.savefig(
+            Path(save_path) / filename, dpi=dpi, bbox_inches="tight", pad_inches=0.02
+        )
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def plot_airfoil_list(

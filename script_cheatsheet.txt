@@ -1,0 +1,18 @@
+Wandb Sweep:
+
+wandb sweep --project CSTVAE initial_sweep_vae.yaml
+
+wandb sweep --project FilmCSTVAE initial_sweep_filmvae.yaml
+
+wandb agent matsouto-universidade-federal-da-bahia/FilmCSTVAE/hctzc1c8
+
+wandb agent matsouto-universidade-federal-da-bahia/FilmCSTVAE/ywj97tec
+
+Gcloud:
+gcloud auth login
+gcloud config set project [PROJECT_ID]
+gcloud compute ssh [VM_NAME] --zone=[ZONE]
+gcloud compute config-ssh
+
+Linux:
+curl -sSL https://install.python-poetry.org | python3 -
